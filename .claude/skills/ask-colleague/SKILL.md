@@ -173,6 +173,6 @@ The result printed to stdout is the work item's `TaskResult.summary` (plus
 
 This is a **first-party** colleague skill — colleague is its origin. It is
 the inverse of the other skills under `.claude/skills/`, which
-culture-agent-template vendors *from* guildmaster. See `docs/skill-sources.md`.
+eidetic-cli vendors *from* guildmaster. See `docs/skill-sources.md`.
 The `cite, don't import` policy holds: downstream repos copy it, they don't
 symlink or depend on it.
