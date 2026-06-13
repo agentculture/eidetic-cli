@@ -119,6 +119,10 @@ itself (distinct from the global `overview`, which describes the agent).
 ENTRIES: dict[tuple[str, ...], str] = {
     (): _ROOT,
     ("eidetic-cli",): _ROOT,
+    # The console script / package is named `eidetic` (see [project.scripts]),
+    # so `explain eidetic` must also resolve — the agent-first rubric probes the
+    # tool by its self-name. Alias it to the same root entry as `eidetic-cli`.
+    ("eidetic",): _ROOT,
     ("whoami",): _WHOAMI,
     ("learn",): _LEARN,
     ("explain",): _EXPLAIN,
