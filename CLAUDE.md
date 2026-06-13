@@ -73,9 +73,9 @@ machine-readable, designed to be driven by another agent, not just a human.
 
 - **`eidetic/explain/catalog.py`** — `explain <path>` resolves command-path
   tuples to verbatim markdown docs. Adding a verb means adding its catalog entry
-  (and its line in `learn.py`'s `_TEXT`/`_as_json_payload` and `overview.py`'s
-  `_VERBS`) — these three are the hand-maintained "docs" surface and drift if you
-  forget one.
+  here, plus its line in `eidetic/cli/_commands/learn.py`'s
+  `_TEXT`/`_as_json_payload` and `eidetic/cli/_commands/overview.py`'s `_VERBS` —
+  these three are the hand-maintained "docs" surface and drift if you forget one.
 
 - **Identity (`whoami.py`, `doctor.py`)** — `find_culture_yaml()` walks up from
   the module to locate the repo's own `culture.yaml` (so identity is the agent's,
