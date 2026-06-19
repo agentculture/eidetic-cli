@@ -68,7 +68,6 @@ def test_to_dict_round_trip() -> None:
 
 def test_from_dict_score_none() -> None:
     """from_dict handles missing score key (defaults to None)."""
-    scope = Scope(name="default", visibility="public")
     data = {
         "id": "z",
         "text": "t",
