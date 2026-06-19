@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Protocol
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
+
+DEFAULT_BACKEND = "files"
+
+_KNOWN_BACKENDS: set[str] = {"files", "neo4j", "mongo"}
 
 
 class Backend(Protocol):
@@ -23,54 +28,20 @@ class Backend(Protocol):
     ) -> list[Record]: ...
 
 
-# -----------------------------------------------------------------------
-# Registry
-# -----------------------------------------------------------------------
-
-_backends: dict[str, type[Backend]] = {}
-
-
-def _register(name: str, cls: type[Backend]) -> None:
-    _backends[name] = cls
-
-
-def get_backend(name: str = "files") -> Backend:
+def get_backend(name: str = DEFAULT_BACKEND) -> Backend:
     """Resolve a backend by name, raising :class:`CliError` on failure."""
-    cls = _backends.get(name)
-    if cls is None:
+    if name not in _KNOWN_BACKENDS:
         raise CliError(
             code=EXIT_ENV_ERROR,
             message=f"unknown memory backend: {name!r}",
-            remediation="available backends: files",
+            remediation=f"available backends: {', '.join(sorted(_KNOWN_BACKENDS))}",
         )
-    return cls()
-
-
-# -----------------------------------------------------------------------
-# In-memory placeholder for 'files' (real implementation is a later task)
-# -----------------------------------------------------------------------
-
-
-class _InMemoryBackend:
-    """Minimal in-memory placeholder for the 'files' backend."""
-
-    def __init__(self) -> None:
-        self._store: list[Record] = []
-
-    def upsert(self, record: Record) -> None:
-        self._store.append(record)
-
-    def search(
-        self,
-        query: str,
-        top_k: int,
-        scope: Scope,
-        filters: dict | None,
-    ) -> list[Record]:
-        from eidetic.memory.scope import can_serve
-
-        results = [r for r in self._store if can_serve(scope, r.scope)]
-        return results[:top_k]
-
-
-_register("files", _InMemoryBackend)
+    try:
+        module = importlib.import_module(f"eidetic.memory.backends.{name}")
+    except ImportError as exc:
+        raise CliError(
+            code=EXIT_ENV_ERROR,
+            message=f"failed to load backend {name!r}: {exc}",
+            remediation=f"install the optional driver for the {name!r} backend",
+        ) from exc
+    return module.build()  # type: ignore[no-any-return]
