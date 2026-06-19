@@ -17,10 +17,10 @@ Agent/CLI providing eidetic perfect-recall memory
 
 ```bash
 uv sync
-uv run pytest -n auto                 # run the test suite
-uv run eidetic-cli whoami  # identity from culture.yaml
-uv run eidetic-cli learn   # self-teaching prompt (add --json)
-uv run teken cli doctor . --strict    # the agent-first rubric gate CI runs
+uv run pytest -n auto               # run the test suite
+uv run eidetic whoami              # identity from culture.yaml (console script is `eidetic`, not `eidetic-cli`)
+uv run eidetic learn               # self-teaching prompt (add --json)
+uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 ```
 
 ## CLI
@@ -43,7 +43,7 @@ error, `3+` reserved.
 1. Rename the package `eidetic/` and the `eidetic-cli`
    CLI/dist name throughout `pyproject.toml`, the package, `tests/`,
    `sonar-project.properties`, and this `README.md`. The name is hard-coded in
-   ~100 places, so list every occurrence first — see the `git grep` discovery
+   ~30 files, so list every occurrence first — see the `git grep` discovery
    command in [`CLAUDE.md`](CLAUDE.md), the authoritative rename procedure.
 2. Edit `culture.yaml` with your `suffix` and `backend`.
 3. Rewrite `CLAUDE.md` for your agent and run `/init`.
