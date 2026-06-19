@@ -12,7 +12,7 @@ import json
 import sys
 from typing import Any
 
-from eidetic.cli._errors import CliError, EXIT_USER_ERROR
+from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
 from eidetic.memory.record import Record
@@ -28,7 +28,7 @@ def _build_records(args: argparse.Namespace) -> list[Record]:
             raise CliError(
                 code=EXIT_USER_ERROR,
                 message=f"invalid JSON: {exc}",
-                remediation="pass a single JSON object string, e.g. {{'id': 'r1', 'text': 'hello'}}",
+                remediation="pass one JSON object string, or NDJSON on stdin",
             ) from exc
         inputs: list[dict[str, Any]] = [data]
     else:

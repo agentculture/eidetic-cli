@@ -7,14 +7,11 @@ never a traceback.
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from typing import Any
 
-from eidetic.cli._errors import CliError, EXIT_USER_ERROR
+from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
-from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
 

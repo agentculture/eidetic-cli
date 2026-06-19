@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from eidetic.cli._commands.remember import cmd_remember, register
-from eidetic.cli._errors import CliError, EXIT_USER_ERROR
+from eidetic.cli._commands.remember import register
+from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.memory.backend import get_backend
 from eidetic.memory.scope import Scope
 
