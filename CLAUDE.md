@@ -23,7 +23,9 @@ but see **Planned domain** below, where that property meets its first real test.
 
 The scaffold's reason to exist is a memory layer that doesn't exist yet. Two open
 issues are the source of truth for its contract — **read them before writing any
-`remember`/`recall` code**; the sketch here is orientation only, not a spec:
+`remember`/`recall` code**; the **Contract shapes** subsection below distills
+them into a written shape, but the issues stay authoritative (#3 calls its shape
+"negotiable", #1 calls its objects "proposed"):
 
 - **[#3] First consumer — `jetson-ai-lab-cli`.** A read-only Discord/docs agent
   needs `eidetic remember` (ingest) and `eidetic recall "<query>"` (top-k
@@ -40,6 +42,56 @@ issues are the source of truth for its contract — **read them before writing a
   proofs/refutations, and reusable lemmas, and exposes them back to earlier
   stages on later runs. It does **not** discover, conjecture, decompose, or
   prove; it only remembers and retrieves.
+
+### Contract shapes (distilled from #1/#3 — proposed, not frozen)
+
+The three deliverables on #1 — *object schema*, *ingest contract*, *retrieval
+contract* — are written out here so a future instance builds against a shape
+instead of re-deriving it from the issues each time. Treat field names as a
+starting contract to confirm with the consumer, not a frozen API.
+
+**Memory objects.** Every stored item is a record with a common envelope plus a
+typed `metadata` payload selected by `type`:
+
+| Field      | Required?  | Notes                                                                   |
+|------------|------------|-------------------------------------------------------------------------|
+| `id`       | yes        | stable identity; the upsert key                                         |
+| `text`     | yes        | the chunk being remembered (Discord msg, doc section, paper summary, claim, …) |
+| `type`     | yes        | one of the object types below; selects the `metadata` shape             |
+| `hash`     | recommended | content hash for dedup/idempotency; derived from `text` when omitted   |
+| `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall                |
+| `score`    | recall-only | relevance, set by `recall`, never sent on ingest                       |
+
+Object `type`s and the `metadata`/relationships that distinguish them:
+
+- **Consumer index (#3):** `discord` / `docs` records — `metadata`: `source`
+  (`discord`|`docs`), `channel` (name + id), `author` (or pseudonymous id),
+  `timestamp`, `permalink`. **Public data only.**
+- **Research memory (#1):** `PaperMemory`, `IdeaSpaceMemory`, `ClaimMemory`,
+  `LemmaMemory`, `ProofMemory`, `RefutationMemory`, `ExperimentNeed`,
+  `ImplementationCandidate`, `ResearchThreadSummary`. Relationships form a claim
+  graph: a `ClaimMemory` links to the `PaperMemory` it came from;
+  `ProofMemory`/`RefutationMemory` attach to a `ClaimMemory`; `LemmaMemory` is
+  reusable across claims; each record carries producer provenance (which of
+  arxivist/tensor/reduce/prove emitted it, on which run).
+
+**Ingest — `eidetic remember`.** Accepts **one record as a JSON object** or a
+**batch as NDJSON on stdin** (one record per line) for bulk re-index. Required
+on every record: `id`, `text`, `type` (`hash`/`metadata` recommended, `hash`
+derived from `text` when absent). **Idempotent upsert by `id`/`hash`** —
+re-ingesting the same record updates in place, never duplicates. Public data
+only; the consumer guarantees it and eidetic must not assume otherwise.
+Producers: the #3 consumer emits `discord`/`docs` records; the #1 pipeline
+stages each emit their own object `type`.
+
+**Retrieval — `eidetic recall "<query>" --top-k N --json`.** Input: a query
+string plus optional facet filters. Output: top-k records ranked by relevance,
+each returned with its `text` + **full `metadata`** + a `score` — **provenance
+is mandatory** (recall without metadata is unusable; the #3 consumer builds
+*cited* answers). Facet filters span both consumers: `source`, `channel`, time
+window (#3) and `paper`, `topic`, `claim`, `lemma`, `method`, `author`,
+downstream `task` (#1). An optional rerank pass (model-gear reranker) may live
+in eidetic or in the caller — undecided.
 
 **This is where the zero-dep property meets its first real test.** A memory layer
 needs embeddings + a store, and the deliberate decision (not a default to drift
