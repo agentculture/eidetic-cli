@@ -74,6 +74,9 @@ class _FakeClient:
             self._databases[name] = _FakeDatabase()
         return self._databases[name]
 
+    def close(self) -> None:
+        pass
+
 
 # -----------------------------------------------------------------------
 # Fixtures
@@ -215,3 +218,42 @@ def test_build_returns_mongo_backend() -> None:
 
     instance = mongo.build()
     assert isinstance(instance, MongoBackend)
+
+
+def test_search_skips_doc_without_embedding() -> None:
+    """search returns [] for a doc with no 'embedding' key, without raising."""
+    client = _FakeClient()
+    client["eidetic_memory"]["records"].replace_one(
+        {"_id": "noemb"},
+        {
+            "_id": "noemb",
+            "id": "noemb",
+            "text": "no embedding",
+            "type": "note",
+            "hash": "h",
+            "metadata": {},
+            "scope": {"name": "default", "visibility": "public"},
+        },
+        upsert=True,
+    )
+    backend = MongoBackend(client=client)
+    results = backend.search(
+        "no embedding",
+        top_k=10,
+        scope=Scope(name="default", visibility="public"),
+        filters=None,
+    )
+    assert results == []
+
+
+def test_close_with_fake_client() -> None:
+    """A backend built with a fake client can close() without error."""
+    fake_client = _FakeClient()
+    backend = MongoBackend(client=fake_client)
+    backend.close()  # should not raise
+
+
+def test_close_never_connected_is_noop() -> None:
+    """A never-connected MongoBackend().close() is a no-op."""
+    backend = MongoBackend()
+    backend.close()  # should not raise

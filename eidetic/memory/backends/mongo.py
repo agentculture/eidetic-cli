@@ -46,6 +46,13 @@ class MongoBackend:
     def _collection(self):
         return self._ensure_client()[self._db_name]["records"]
 
+    # -- resource cleanup ------------------------------------------------
+
+    def close(self) -> None:
+        """Close the MongoDB client connection (no-op if never connected)."""
+        if self._client is not None:
+            self._client.close()
+
     # -- Backend protocol ------------------------------------------------
 
     def upsert(self, record: Record) -> None:

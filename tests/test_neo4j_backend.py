@@ -225,3 +225,17 @@ def test_driver_connection_error_wrapped() -> None:
     err = exc_info.value
     assert err.code == 2
     assert err.remediation
+
+
+def test_close_with_fake_driver() -> None:
+    """A backend built with a fake driver can close() and the driver's close is called."""
+    driver = MagicMock()
+    backend = Neo4jBackend(driver=driver)
+    backend.close()
+    driver.close.assert_called_once()
+
+
+def test_close_never_connected_is_noop() -> None:
+    """A never-connected Neo4jBackend().close() is a no-op."""
+    backend = Neo4jBackend()
+    backend.close()  # should not raise
