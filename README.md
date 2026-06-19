@@ -10,8 +10,10 @@ Agent/CLI providing eidetic perfect-recall memory
   over a subprocess boundary.
 - **A mesh identity** — `culture.yaml` (`suffix` + `backend`) and the matching
   prompt file (`CLAUDE.md` for `backend: claude`).
-- **The canonical guildmaster skill kit** (11 skills) under `.claude/skills/`,
-  vendored cite-don't-import. See [`docs/skill-sources.md`](docs/skill-sources.md).
+- **The canonical guildmaster skill kit** under `.claude/skills/`, vendored
+  cite-don't-import, plus eidetic's own first-party `remember` / `recall` skills
+  (a shared `~/.eidetic/memory` store both Claude and the colleague backend can
+  drive). See [`docs/skill-sources.md`](docs/skill-sources.md).
 - **A build + deploy baseline** — pytest, lint, the agent-first rubric gate, and
   PyPI Trusted Publishing wired into GitHub Actions.
 
@@ -35,7 +37,7 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `overview` | Read-only descriptive snapshot of the agent. |
 | `doctor` | Check the agent-identity invariants (prompt-file-present, backend-consistency). |
 | `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; `--backend`/`--scope`/`--visibility`. |
-| `recall <query>` | Search the store — top-k hits with text + full metadata + score; scope-aware (no private→public leak); `--top-k`/`--filter`/`--backend`. |
+| `recall <query>` | Search the store — top-k hits with text + full metadata + score; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. |
 | `cli overview` | Describe the CLI surface itself. |
 
 Every command supports `--json`. Results go to stdout, errors/diagnostics to
@@ -54,8 +56,11 @@ eidetic remember --backend mongo …  # the CLI's default connection settings al
 
 eidetic is the memory layer itself — these are eidetic's own stores (their store /
 Cypher / embedding logic is *adapted* from `data-refinery`, not a dependency on its
-running stack). Embeddings + rerank come from a separate model-gear HTTP endpoint,
-with a deterministic local lexical fallback when it is absent.
+running stack). Embeddings + rerank come from a separate model-gear HTTP endpoint
+(`EIDETIC_EMBED_URL`, `EIDETIC_EMBED_MODEL` — default
+`http://localhost:8002/v1` + `Qwen/Qwen3-Embedding-0.6B`), with a deterministic
+local lexical fallback when it is absent. Only `approximate`/`hybrid` recall use
+it; `exact`/`keyword` are pure lexical and work fully offline.
 
 **Known limitations** (tracked follow-ups): `--filter` is exact string-equality on
 metadata (time-range filtering is future work); the files backend re-embeds

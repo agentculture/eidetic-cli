@@ -9,9 +9,10 @@ from pymongo import MongoClient
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import Backend
-from eidetic.memory.embed import EmbedClient, cosine
+from eidetic.memory.embed import EmbedClient
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope, can_serve
+from eidetic.memory.scoring import rank
 
 
 class MongoBackend:
@@ -68,31 +69,33 @@ class MongoBackend:
         top_k: int,
         scope: Scope,
         filters: dict | None,
+        mode: str = "hybrid",
+        *,
+        alpha: float = 0.5,
+        case_sensitive: bool = False,
     ) -> list[Record]:
-        query_emb = self._embed.embed([query])[0]
-
         # Build find query — push metadata facet filters into MongoDB
         find_query: dict[str, Any] = {}
         if filters:
             for key, value in filters.items():
                 find_query[f"metadata.{key}"] = value
 
-        candidates = list(self._collection.find(find_query))
-
-        results: list[Record] = []
-        for doc in candidates:
+        candidates: list[Record] = []
+        for doc in self._collection.find(find_query):
             record = Record.from_dict(doc)
             if not can_serve(scope, record.scope):
                 continue
-            embedding = doc.get("embedding")
-            if embedding is None:
-                continue
-            score = cosine(query_emb, embedding)
-            record.score = score
-            results.append((score, record))
+            candidates.append(record)
 
-        results.sort(key=lambda t: t[0], reverse=True)
-        return [rec for _, rec in results[:top_k]]
+        return rank(
+            mode,
+            query,
+            candidates,
+            self._embed,
+            top_k,
+            alpha=alpha,
+            case_sensitive=case_sensitive,
+        )
 
 
 def build() -> Backend:

@@ -1,6 +1,6 @@
 [project]
 name = "eidetic-cli"
-version = "0.3.0"
+version = "0.4.0"
 description = "Agent/CLI providing eidetic perfect-recall memory"
 readme = "README.md"
 license = "MIT"

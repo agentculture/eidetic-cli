@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-19
+
+### Added
+
+- recall --mode {exact,approximate,keyword,hybrid} — four search modes (default hybrid); exact=case-insensitive substring (--case-sensitive), approximate=vector cosine, keyword=BM25, hybrid=weighted alpha blend (--alpha, default 0.5) that degrades to keyword-only when embeddings are offline
+- eidetic/memory/scoring.py — one shared per-mode ranker every backend calls, so all four modes behave identically across the files/mongo/neo4j backends
+- First-party remember / recall skills (.claude/skills/) wrapping the CLI over a shared ~/.eidetic/memory store, usable by both Claude and the colleague backend
+- EmbedClient.embed_detect() reports remote vs offline-fallback; EIDETIC_EMBED_MODEL env selects the embedding model
+
+### Changed
+
+- recall ranking now recomputes embeddings at query time (uniform across backends); mongo no longer silently drops records without a stored embedding
+- EmbedClient rerank reads relevance_score (vLLM/Jina/Cohere) with score fallback
+
 ## [0.3.0] - 2026-06-19
 
 ### Added

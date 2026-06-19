@@ -1,4 +1,4 @@
-# eidetic recall now searches four ways — exact, approximate (vector), keyword (BM25), and hybrid (RRF fusion) — and a vendored memory skill lets both Claude and its colleague backend remember and recall against one shared store.
+# eidetic recall now searches four ways — exact, approximate (vector), keyword (BM25), and hybrid (weighted blend) — and vendored memory skills let both Claude and its colleague backend remember and recall against one shared store
 
 > eidetic recall now searches four ways — exact, approximate (vector), keyword (BM25), and hybrid (RRF fusion) — and a vendored memory skill lets both Claude and its colleague backend remember and recall against one shared store.
 

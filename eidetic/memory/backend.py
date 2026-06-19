@@ -25,6 +25,10 @@ class Backend(Protocol):
         top_k: int,
         scope: Scope,
         filters: dict | None,
+        mode: str = "hybrid",
+        *,
+        alpha: float = 0.5,
+        case_sensitive: bool = False,
     ) -> list[Record]: ...
 
 

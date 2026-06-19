@@ -220,8 +220,12 @@ def test_build_returns_mongo_backend() -> None:
     assert isinstance(instance, MongoBackend)
 
 
-def test_search_skips_doc_without_embedding() -> None:
-    """search returns [] for a doc with no 'embedding' key, without raising."""
+def test_search_includes_doc_without_stored_embedding() -> None:
+    """A doc with no stored 'embedding' is still searchable.
+
+    Ranking recomputes embeddings (or scores lexically) at query time, so docs
+    written before embedding support are no longer silently dropped from search.
+    """
     client = _FakeClient()
     client["eidetic_memory"]["records"].replace_one(
         {"_id": "noemb"},
@@ -242,8 +246,10 @@ def test_search_skips_doc_without_embedding() -> None:
         top_k=10,
         scope=Scope(name="default", visibility="public"),
         filters=None,
+        mode="keyword",
     )
-    assert results == []
+    assert [r.id for r in results] == ["noemb"]
+    assert results[0].score is not None
 
 
 def test_close_with_fake_client() -> None:

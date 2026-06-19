@@ -91,20 +91,30 @@ class EmbedClient:
         self._base_url = (
             base_url or os.environ.get("EIDETIC_EMBED_URL") or _DEFAULT_BASE_URL
         ).rstrip("/")
-        self._model = model or _DEFAULT_MODEL
+        self._model = model or os.environ.get("EIDETIC_EMBED_MODEL") or _DEFAULT_MODEL
 
     # -- public API -----------------------------------------------------
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return embeddings for *texts*.
+        """Return embeddings for *texts* (vectors only).
+
+        Thin wrapper over :meth:`embed_detect` for callers that don't care
+        whether the remote endpoint or the offline fallback produced them.
+        """
+        return self.embed_detect(texts)[0]
+
+    def embed_detect(self, texts: list[str]) -> tuple[list[list[float]], bool]:
+        """Return ``(embeddings, online)`` for *texts*.
 
         POSTs to the configured endpoint; on any connection error falls back
-        to a deterministic local lexical embedding.
+        to a deterministic local lexical embedding. ``online`` is ``True`` only
+        when the remote endpoint answered — callers (e.g. hybrid recall) use it
+        to avoid fusing meaningless hash-fallback cosine scores.
         """
         try:
-            return self._remote_embed(texts)
+            return self._remote_embed(texts), True
         except Exception:
-            return [_local_embed(t) for t in texts]
+            return [_local_embed(t) for t in texts], False
 
     def rerank(self, query: str, docs: list[str]) -> list[float]:
         """Return a score per document indicating relevance to *query*.
@@ -159,8 +169,11 @@ class EmbedClient:
         ) as resp:  # noqa: S310  # nosec B310
             body = json.loads(resp.read())
         results: list[dict[str, Any]] = body.get("results", body)
-        # Build a map index -> score, then return in doc order
-        score_map: dict[int, float] = {r["index"]: r["score"] for r in results}
+        # Build a map index -> score, then return in doc order. vLLM / Jina /
+        # Cohere rerankers return `relevance_score`; some servers use `score`.
+        score_map: dict[int, float] = {
+            r["index"]: r.get("relevance_score", r.get("score", 0.0)) for r in results
+        }
         return [score_map.get(i, 0.0) for i in range(len(docs))]
 
     # -- local fallbacks -----------------------------------------------
