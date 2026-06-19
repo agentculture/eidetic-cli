@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from eidetic.memory.backends.files import FilesBackend
@@ -154,8 +156,6 @@ def test_corrupt_jsonl_raises_cli_error(backend: FilesBackend, tmp_path: pytest.
     from eidetic.cli._errors import CliError
 
     # Write one valid record line and one corrupt line
-    import json
-
     good = json.dumps(
         {
             "id": "ok",
