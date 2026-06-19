@@ -77,6 +77,13 @@ def test_keyword_empty_candidates() -> None:
     assert rank("keyword", "x", [], _offline_embed(), top_k=5) == []
 
 
+def test_keyword_strips_punctuation() -> None:
+    # "Iceland." (trailing period) must still match the query "iceland".
+    cands = [_rec("a", "Reykjavik is the capital of Iceland."), _rec("b", "no match here")]
+    out = rank("keyword", "iceland", cands, _offline_embed(), top_k=10)
+    assert [r.id for r in out] == ["a"]
+
+
 # -- approximate (vector cosine, deterministic offline) --------------------
 
 

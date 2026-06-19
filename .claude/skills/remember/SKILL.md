@@ -67,7 +67,10 @@ periodic re-scan) is safe and will not create duplicates.
   (`http://localhost:8002/v1`); override with `EIDETIC_EMBED_URL` /
   `EIDETIC_EMBED_MODEL`. Ingest still works offline (embeddings are recomputed at
   recall time).
-- `eidetic explain remember` is the authoritative reference.
+- **Use the wrapper, not a bare `eidetic`.** The console script may not be on
+  `PATH` (in a dev checkout it isn't); the wrapper resolves it (`PATH` first, else
+  `uv run eidetic`). For the docs, run `eidetic explain remember` if installed,
+  otherwise `uv run --project <eidetic-cli checkout> eidetic explain remember`.
 
 ## Provenance
 

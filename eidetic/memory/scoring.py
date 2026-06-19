@@ -23,10 +23,21 @@ and ``keyword`` are pure lexical and work fully offline.
 from __future__ import annotations
 
 import math
+import re
 
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
-from eidetic.memory.embed import EmbedClient, _tokenize, cosine
+from eidetic.memory.embed import EmbedClient, cosine
 from eidetic.memory.record import Record
+
+# Lexical tokeniser for keyword/BM25: alphanumeric runs, lower-cased. Unlike the
+# embedding tokeniser (whitespace split), this strips punctuation so "Iceland."
+# matches the query "iceland".
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _kw_tokenize(text: str) -> list[str]:
+    return _WORD_RE.findall(text.lower())
+
 
 MODES: tuple[str, ...] = ("exact", "approximate", "keyword", "hybrid")
 DEFAULT_MODE = "hybrid"
@@ -103,11 +114,11 @@ def _score_exact(
 
 def _bm25_scores(query: str, candidates: list[Record]) -> list[float]:
     """Return a BM25 score per candidate (parallel to *candidates*)."""
-    docs = [_tokenize(c.text) for c in candidates]
+    docs = [_kw_tokenize(c.text) for c in candidates]
     n = len(docs)
     if n == 0:
         return []
-    q_terms = _tokenize(query)
+    q_terms = _kw_tokenize(query)
     avgdl = sum(len(d) for d in docs) / n if n else 0.0
 
     df: dict[str, int] = {}
