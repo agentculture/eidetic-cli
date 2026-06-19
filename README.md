@@ -5,7 +5,9 @@ Agent/CLI providing eidetic perfect-recall memory
 ## What you get
 
 - **An agent-first CLI** cited from [teken](https://github.com/agentculture/teken)
-  (`afi-cli`) — the runtime package has no third-party dependencies.
+  (`afi-cli`) — the runtime declares `neo4j` and `pymongo` for its Neo4j and Mongo
+  memory backends; consumers stay dependency-free because they call `eidetic`
+  over a subprocess boundary.
 - **A mesh identity** — `culture.yaml` (`suffix` + `backend`) and the matching
   prompt file (`CLAUDE.md` for `backend: claude`).
 - **The canonical guildmaster skill kit** (11 skills) under `.claude/skills/`,
@@ -32,11 +34,33 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `explain <path>` | Markdown docs for any noun/verb path. |
 | `overview` | Read-only descriptive snapshot of the agent. |
 | `doctor` | Check the agent-identity invariants (prompt-file-present, backend-consistency). |
+| `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; `--backend`/`--scope`/`--visibility`. |
+| `recall <query>` | Search the store — top-k hits with text + full metadata + score; scope-aware (no private→public leak); `--top-k`/`--filter`/`--backend`. |
 | `cli overview` | Describe the CLI surface itself. |
 
 Every command supports `--json`. Results go to stdout, errors/diagnostics to
 stderr (never mixed). Exit codes: `0` success, `1` user error, `2` environment
 error, `3+` reserved.
+
+## Memory stores
+
+The `files` backend (default) is self-contained — JSONL on disk, no services. For
+the `neo4j` / `mongo` backends, eidetic owns its own stores via `docker-compose.yml`:
+
+```bash
+docker compose up -d                # eidetic-neo4j (bolt :7687) + eidetic-mongo (:27018)
+eidetic remember --backend mongo …  # the CLI's default connection settings already match
+```
+
+eidetic is the memory layer itself — these are eidetic's own stores (their store /
+Cypher / embedding logic is *adapted* from `data-refinery`, not a dependency on its
+running stack). Embeddings + rerank come from a separate model-gear HTTP endpoint,
+with a deterministic local lexical fallback when it is absent.
+
+**Known limitations** (tracked follow-ups): `--filter` is exact string-equality on
+metadata (time-range filtering is future work); the files backend re-embeds
+candidates per search (no embedding cache yet); the Neo4j backend fetches nodes and
+ranks in Python (vector-index pushdown is future work).
 
 ## Make it your own
 

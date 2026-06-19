@@ -13,11 +13,7 @@ reference), a mesh identity, the vendored guildmaster skill kit, and a
 build/CI/deploy baseline. New domain code is added as additional noun groups on
 top of this scaffold — it does not replace it.
 
-The runtime package has **zero third-party dependencies** (`dependencies = []`).
-`teken` and the lint/test tooling are dev-only. Keep it that way: the
-self-contained runtime is a load-bearing property (the `whoami`/`doctor`
-commands even parse `culture.yaml` by hand rather than import a YAML library) —
-but see **Planned domain** below, where that property meets its first real test.
+The runtime package declares `neo4j` and `pymongo` as required dependencies for its Neo4j and Mongo memory backends. Embeddings and rerank still go over HTTP (no dep), and the files backend stays dependency-light for private/local scopes. Consumers stay dependency-free because they call `eidetic` over a subprocess boundary — that subprocess-not-import shape is the whole reason this is a CLI.
 
 ## Planned domain: the memory surface (not yet built)
 
@@ -93,15 +89,17 @@ window (#3) and `paper`, `topic`, `claim`, `lemma`, `method`, `author`,
 downstream `task` (#1). An optional rerank pass (model-gear reranker) may live
 in eidetic or in the caller — undecided.
 
-**This is where the zero-dep property meets its first real test.** A memory layer
+**This is where the dependency story meets its first real test.** A memory layer
 needs embeddings + a store, and the deliberate decision (not a default to drift
 into) is *where* that weight lives: call `model-gear`'s OpenAI-compatible
-`/v1/embeddings` and reranker over HTTP — keeping `dependencies = []` — or
+`/v1/embeddings` and reranker over HTTP — no extra dep — or
 lazy-import a vector store behind the CLI. Either way, keep the heavy deps behind
 eidetic's *process* boundary so consumers stay dependency-free; that
-subprocess-not-import shape is the whole reason this is a CLI. The sibling
-`../autonomous-intelligence/data-refinery` (local neo4j + mongo) is the candidate
-backing store for the graph/RAG side. Build memory as new noun groups (`remember`,
+subprocess-not-import shape is the whole reason this is a CLI. eidetic owns its
+own neo4j + mongo via `docker-compose.yml` (`docker compose up`); the
+store/cypher/embedding logic is adapted from the sibling
+`../autonomous-intelligence/data-refinery` (cite-don't-import), but eidetic is the
+memory layer itself — not reliant on data-refinery's running stack. Build memory as new noun groups (`remember`,
 `recall`, …) on top of the scaffold per the **Architecture** pattern below — and
 keep each one rubric-green (`overview`, `learn` entry, `explain` catalog).
 

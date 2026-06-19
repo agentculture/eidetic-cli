@@ -228,3 +228,6 @@ __marimo__/
 
 # Per-machine skills config (copy from skills.local.yaml.example)
 skills.local.yaml
+
+# eidetic-owned store volumes (docker-compose.yml)
+/.data/

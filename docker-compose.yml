@@ -1,0 +1,53 @@
+# eidetic-cli owns its memory backends — it is the memory layer itself, not a
+# client of any other project's databases. Bring eidetic's own stores up with:
+#
+#   docker compose up -d
+#
+# The CLI's default connection settings already point here, so:
+#   eidetic remember --backend neo4j ...      (NEO4J_URI=bolt://localhost:7687)
+#   eidetic remember --backend mongo  ...      (EIDETIC_MONGO_URI=mongodb://localhost:27018)
+#
+# Ports are deliberately distinct from common defaults (mongo on 27018, not
+# 27017) so eidetic's stores never collide with — or silently borrow — another
+# project's running mongo/neo4j. Override via the env vars above if you need to.
+#
+# Embeddings + rerank are a separate OpenAI-compatible HTTP service (model-gear),
+# not owned here — eidetic reaches it over HTTP and falls back to a local lexical
+# scorer when it is absent.
+
+services:
+  eidetic-neo4j:
+    image: neo4j:5-community
+    container_name: eidetic-neo4j
+    restart: unless-stopped
+    ports:
+      - "7687:7687"   # bolt protocol  (NEO4J_URI=bolt://localhost:7687)
+      - "7474:7474"   # browser UI
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - ./.data/neo4j/data:/data
+      - ./.data/neo4j/logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  eidetic-mongo:
+    image: mongo:8.0
+    container_name: eidetic-mongo
+    restart: unless-stopped
+    ports:
+      - "27018:27017"  # host 27018 (EIDETIC_MONGO_URI=mongodb://localhost:27018)
+    environment:
+      MONGO_INITDB_DATABASE: eidetic_memory
+    volumes:
+      - ./.data/mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
