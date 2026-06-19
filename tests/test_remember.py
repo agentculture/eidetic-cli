@@ -192,3 +192,19 @@ def test_missing_text_raises_cli_error(tmp_data_dir: str) -> None:
     with pytest.raises(CliError) as exc_info:
         args.func(args)
     assert exc_info.value.code == EXIT_USER_ERROR
+
+
+def test_malformed_scope_raises_cli_error(tmp_data_dir: str) -> None:
+    """A record with a string 'scope' (not a dict) raises CliError."""
+    record_json = json.dumps({"id": "x", "text": "t", "scope": "default"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+        ]
+    )
+    with pytest.raises(CliError) as exc_info:
+        args.func(args)
+    assert exc_info.value.code == EXIT_USER_ERROR

@@ -33,6 +33,13 @@ class Neo4jBackend:
         self._password = password
         self._embed = EmbedClient()
 
+    # -- resource cleanup ------------------------------------------------
+
+    def close(self) -> None:
+        """Close the Neo4j driver connection (no-op if never connected)."""
+        if self._driver is not None:
+            self._driver.close()
+
     # -- Backend protocol ------------------------------------------------
 
     def upsert(self, record: Record) -> None:
