@@ -28,6 +28,8 @@ Commands
   eidetic-cli explain <path>...  Markdown docs for any noun/verb path.
   eidetic-cli overview           Descriptive snapshot of the agent.
   eidetic-cli doctor             Check the agent-identity invariants.
+  eidetic-cli remember           Ingest memory records (JSON or NDJSON).
+  eidetic-cli recall             Search the memory store.
   eidetic-cli cli overview       Describe the CLI surface itself.
 
 Machine-readable output
@@ -59,6 +61,8 @@ def _as_json_payload() -> dict[str, object]:
             {"path": ["explain"], "summary": "Markdown docs by path."},
             {"path": ["overview"], "summary": "Descriptive snapshot of the agent."},
             {"path": ["doctor"], "summary": "Check the agent-identity invariants."},
+            {"path": ["remember"], "summary": "Ingest memory records (JSON or NDJSON)."},
+            {"path": ["recall"], "summary": "Search the memory store."},
             {"path": ["cli", "overview"], "summary": "Describe the CLI surface."},
         ],
         "exit_codes": {
