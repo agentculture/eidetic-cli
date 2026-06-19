@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-19
+
+### Added
+
+- Memory surface: `remember` (idempotent upsert by id; one JSON object or NDJSON-on-stdin) and `recall` (top-k hits, each with text + full metadata + score; scope-aware) verbs
+- Pluggable storage backends selectable via --backend: files (zero-dep default, JSONL), Neo4j, and Mongo
+- Per-scope public/private visibility with a load-bearing no-private-to-public-leak invariant
+- model-gear / OpenAI-compatible embeddings + rerank client over stdlib HTTP with a deterministic offline lexical fallback
+
+### Changed
+
+- Neo4j and Mongo are now required runtime dependencies (neo4j, pymongo); the runtime is no longer zero-dependency — consumers stay dependency-free via the subprocess boundary
+
 ## [0.2.2] - 2026-06-19
 
 ### Changed
