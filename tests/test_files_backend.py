@@ -138,9 +138,10 @@ def test_scope_file_no_collision_same_name_different_visibility(
     assert len(pub_hits) == 1
     assert pub_hits[0].text == "public text"
 
-    # Private search should only return the private record
+    # Private search sees its own private record with its OWN text (proving the
+    # same-name public scope did not overwrite it); public records stay visible.
     priv_results = backend.search("text", top_k=10, scope=priv_scope, filters=None)
-    priv_hits = [r for r in priv_results if r.id == "r1"]
+    priv_hits = [r for r in priv_results if r.id == "r1" and r.scope.visibility == "private"]
     assert len(priv_hits) == 1
     assert priv_hits[0].text == "private text"
 
@@ -152,13 +153,21 @@ def test_corrupt_jsonl_raises_cli_error(backend: FilesBackend, tmp_path: pytest.
     """A JSONL file with a corrupt line raises CliError, not a bare exception."""
     from eidetic.cli._errors import CliError
 
-    # Write a file with a corrupt line
-    corrupt_file = tmp_path / "corrupt.jsonl"
-    corrupt_file.write_text(
-        '{"id": "ok", "text": "fine", "type": "note", "hash": "h", "metadata": {}, "scope": {"name": "d", "visibility": "public"}}\n'
-        "this is not json\n",
-        encoding="utf-8",
+    # Write one valid record line and one corrupt line
+    import json
+
+    good = json.dumps(
+        {
+            "id": "ok",
+            "text": "fine",
+            "type": "note",
+            "hash": "h",
+            "metadata": {},
+            "scope": {"name": "d", "visibility": "public"},
+        }
     )
+    corrupt_file = tmp_path / "corrupt.jsonl"
+    corrupt_file.write_text(good + "\nthis is not json\n", encoding="utf-8")
 
     # Force the backend to read from this path
     backend._base = tmp_path
