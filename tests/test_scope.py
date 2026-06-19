@@ -40,6 +40,13 @@ def test_private_record_not_served_to_public_scope() -> None:
     assert can_serve(query, record) is False
 
 
+def test_private_record_not_served_to_samename_public_scope() -> None:
+    """A private record never leaks to a public query that shares its name."""
+    query = Scope(name="private-a", visibility="public")
+    record = Scope(name="private-a", visibility="private")
+    assert can_serve(query, record) is False
+
+
 def test_default_scope_is_public() -> None:
     """DEFAULT scope constant is public."""
     assert DEFAULT.visibility == "public"
