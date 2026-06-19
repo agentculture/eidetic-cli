@@ -5,7 +5,9 @@ Agent/CLI providing eidetic perfect-recall memory
 ## What you get
 
 - **An agent-first CLI** cited from [teken](https://github.com/agentculture/teken)
-  (`afi-cli`) — the runtime package has no third-party dependencies.
+  (`afi-cli`) — the runtime declares `neo4j` and `pymongo` for its Neo4j and Mongo
+  memory backends; consumers stay dependency-free because they call `eidetic`
+  over a subprocess boundary.
 - **A mesh identity** — `culture.yaml` (`suffix` + `backend`) and the matching
   prompt file (`CLAUDE.md` for `backend: claude`).
 - **The canonical guildmaster skill kit** (11 skills) under `.claude/skills/`,

@@ -13,7 +13,7 @@ classifiers = [
     "Topic :: Software Development",
     "Intended Audience :: Developers",
 ]
-dependencies = []
+dependencies = ["neo4j", "pymongo"]
 
 [project.urls]
 Homepage = "https://github.com/agentculture/eidetic-cli"
