@@ -1,0 +1,217 @@
+{
+  "slug": "eidetic-cli-ships-its-memory-surface-remember-inge",
+  "title": "eidetic-cli ships its memory surface: remember ingests records, recall returns top-k cited hits with text plus full provenance metadata plus score",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-19T14:43:21Z",
+  "updated": "2026-06-19T15:33:31Z",
+  "claims": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic-cli ships its memory surface: remember ingests records, recall returns top-k cited hits with text plus full provenance metadata plus score",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h5",
+          "text": "the #3 consumer (jetson-ai-lab-cli) can remember a record and later recall it with full provenance across a subprocess boundary, adding zero eidetic-side dependency to the consumer",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "AI-agent consumers over a subprocess boundary, with no bespoke per-consumer coupling: (a) any AgentCulture mesh or colleague agent, present and future - the #3 jetson-ai-lab-cli read-only Discord and docs agent, the #1 research pipeline stages (arxivist, tensor, reduce, prove), and other current or future mesh agents; and (b) all Claude (Claude Code) agents, which call eidetic as a drop-in replacement for the existing ~/.claude memory skill (core and working notes plus MongoDB RAG plus Neo4j knowledge graph)",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h6",
+          "text": "the remember and recall contract is generic enough that any consumer - a mesh or colleague agent, a future agent like arxivist, or a Claude Code agent using eidetic in place of the existing memory skill - can call it over the subprocess boundary with no eidetic-side change per consumer",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c3",
+      "kind": "after_state",
+      "text": "eidetic durably stores text records and serves ranked, cited recall, so the scaffold finally does its declared job of perfect-recall memory",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h7",
+          "text": "a remembered record survives across separate CLI invocations (process restarts) and is later retrievable: storage is durable, not in-memory only",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c4",
+      "kind": "before_state",
+      "text": "only the scaffold exists (whoami, learn, explain, overview, doctor); remember and recall are unbuilt; consumers have nowhere durable to store or retrieve",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h8",
+          "text": "no existing eidetic command stores or retrieves records today; remember and recall are genuinely absent, not partially present",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "consumers build cited answers, so recall is unusable unless every hit round-trips full provenance metadata plus a score",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h9",
+          "text": "a recall hit carries enough provenance (source plus locator or permalink) for the consumer to render a citation without a second lookup",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "eidetic only remembers and retrieves; it does not discover, conjecture, decompose, or prove; not a general database. Data sensitivity is per-namespace: the #3 discord and docs namespace is public-data-only (its own contract), while private namespaces such as Claude-agent memory are local-only and never exposed to public or shared consumers; there is no global public-only rule",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h10",
+          "text": "eidetic performs no discovery, conjecture, decomposition, or proving; every scope is labeled public or private and a private scope's records never leak into a public scope's recall; the #3 public scope holds public data only",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "the #3 consumer can batch-remember via NDJSON on stdin and recall with top-k JSON, every hit carrying mandatory metadata plus score; re-ingesting the same id never duplicates",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h11",
+          "text": "an end-to-end test shows batch NDJSON ingest then recall top-k json with metadata and score, and a duplicate-id re-ingest leaves the record count unchanged",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "ingest is idempotent upsert by id or hash; recall returns text plus full metadata plus score and honors --json; each new noun group stays rubric-green with overview, learn entry, and explain catalog",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h1",
+          "text": "remember the same id twice yields exactly one record, updated in place, proven by a test",
+          "status": "confirmed"
+        },
+        {
+          "id": "h2",
+          "text": "recall never returns a hit missing metadata or score; provenance is mandatory",
+          "status": "confirmed"
+        },
+        {
+          "id": "h3",
+          "text": "the runtime keeps dependencies empty; heavy embedding and store deps live only behind the eidetic process boundary",
+          "status": "confirmed"
+        },
+        {
+          "id": "h4",
+          "text": "teken cli doctor --strict stays green: each new noun group exposes overview, a learn entry, and an explain catalog",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c9",
+      "kind": "decision",
+      "text": "storage and embedding weight stays behind the eidetic process boundary so consumers stay dependency-free: subprocess, not import",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c10",
+      "kind": "open_question",
+      "text": "which backing store: zero-dep files, model-gear HTTP embeddings with a local vector store, or data-refinery with neo4j plus mongo plus TEI embeddings",
+      "origin": "llm",
+      "status": "rejected",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c11",
+      "kind": "decision",
+      "text": "memory storage is a pluggable backend supporting files, neo4j, and mongo; embeddings and reranking go through model-gear over HTTP; data-refinery is the backing store and will be improved by adding the missing ingest upsert and vector search and by wiring the currently unused mongo; the files backend keeps the default zero-dep while neo4j and mongo deps are optional and lazy-imported behind backend selection",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c12",
+      "kind": "requirement",
+      "text": "every record belongs to a scope (namespace) labeled public or private; recall is scope-aware and records in a private scope never leak into a public scope recall; private scopes such as Claude-agent memory are local-only; eidetic replaces the existing ~/.claude memory skill, which becomes a thin client over remember and recall",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h12",
+          "text": "a recall in a public scope never returns a record from a private scope, proven by an isolation test; and the existing memory skill facts round-trip through eidetic remember and recall",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c13",
+      "kind": "decision",
+      "text": "data sensitivity is per-scope visibility, public or private, chosen over a global public-only rule and over per-record access control; the load-bearing invariant is no private-to-public leak; public and shared scopes live in the data-refinery store while private scopes are local-only",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    }
+  ],
+  "open_vagueness": [
+    {
+      "id": "v1",
+      "text": "RESOLVED by decision c11 (pluggable files/neo4j/mongo backend over model-gear embeddings+reranker, data-refinery as backing store). Non-blocking residual: extend data-refinery with an ingest/upsert path and a vector/top-k search, and wire the currently-unused qq_memory mongo",
+      "kind": "follow_up",
+      "claim_id": "c11"
+    }
+  ]
+}
