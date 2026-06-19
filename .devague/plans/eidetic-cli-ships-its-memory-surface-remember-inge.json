@@ -1,0 +1,365 @@
+{
+  "slug": "eidetic-cli-ships-its-memory-surface-remember-inge",
+  "title": "eidetic-cli ships its memory surface: remember ingests records, recall returns top-k cited hits with text plus full provenance metadata plus score",
+  "frame_slug": "eidetic-cli-ships-its-memory-surface-remember-inge",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-19T15:38:36Z",
+  "updated": "2026-06-19T15:53:09Z",
+  "targets": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic-cli ships its memory surface: remember ingests records, recall returns top-k cited hits with text plus full provenance metadata plus score"
+    },
+    {
+      "id": "h5",
+      "kind": "honesty",
+      "text": "the #3 consumer (jetson-ai-lab-cli) can remember a record and later recall it with full provenance across a subprocess boundary, adding zero eidetic-side dependency to the consumer"
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "AI-agent consumers over a subprocess boundary, with no bespoke per-consumer coupling: (a) any AgentCulture mesh or colleague agent, present and future - the #3 jetson-ai-lab-cli read-only Discord and docs agent, the #1 research pipeline stages (arxivist, tensor, reduce, prove), and other current or future mesh agents; and (b) all Claude (Claude Code) agents, which call eidetic as a drop-in replacement for the existing ~/.claude memory skill (core and working notes plus MongoDB RAG plus Neo4j knowledge graph)"
+    },
+    {
+      "id": "h6",
+      "kind": "honesty",
+      "text": "the remember and recall contract is generic enough that any consumer - a mesh or colleague agent, a future agent like arxivist, or a Claude Code agent using eidetic in place of the existing memory skill - can call it over the subprocess boundary with no eidetic-side change per consumer"
+    },
+    {
+      "id": "c3",
+      "kind": "after_state",
+      "text": "eidetic durably stores text records and serves ranked, cited recall, so the scaffold finally does its declared job of perfect-recall memory"
+    },
+    {
+      "id": "h7",
+      "kind": "honesty",
+      "text": "a remembered record survives across separate CLI invocations (process restarts) and is later retrievable: storage is durable, not in-memory only"
+    },
+    {
+      "id": "c4",
+      "kind": "before_state",
+      "text": "only the scaffold exists (whoami, learn, explain, overview, doctor); remember and recall are unbuilt; consumers have nowhere durable to store or retrieve"
+    },
+    {
+      "id": "h8",
+      "kind": "honesty",
+      "text": "no existing eidetic command stores or retrieves records today; remember and recall are genuinely absent, not partially present"
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "consumers build cited answers, so recall is unusable unless every hit round-trips full provenance metadata plus a score"
+    },
+    {
+      "id": "h9",
+      "kind": "honesty",
+      "text": "a recall hit carries enough provenance (source plus locator or permalink) for the consumer to render a citation without a second lookup"
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "eidetic only remembers and retrieves; it does not discover, conjecture, decompose, or prove; not a general database. Data sensitivity is per-namespace: the #3 discord and docs namespace is public-data-only (its own contract), while private namespaces such as Claude-agent memory are local-only and never exposed to public or shared consumers; there is no global public-only rule"
+    },
+    {
+      "id": "h10",
+      "kind": "honesty",
+      "text": "eidetic performs no discovery, conjecture, decomposition, or proving; every scope is labeled public or private and a private scope's records never leak into a public scope's recall; the #3 public scope holds public data only"
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "the #3 consumer can batch-remember via NDJSON on stdin and recall with top-k JSON, every hit carrying mandatory metadata plus score; re-ingesting the same id never duplicates"
+    },
+    {
+      "id": "h11",
+      "kind": "honesty",
+      "text": "an end-to-end test shows batch NDJSON ingest then recall top-k json with metadata and score, and a duplicate-id re-ingest leaves the record count unchanged"
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "ingest is idempotent upsert by id or hash; recall returns text plus full metadata plus score and honors --json; each new noun group stays rubric-green with overview, learn entry, and explain catalog"
+    },
+    {
+      "id": "h1",
+      "kind": "honesty",
+      "text": "remember the same id twice yields exactly one record, updated in place, proven by a test"
+    },
+    {
+      "id": "h2",
+      "kind": "honesty",
+      "text": "recall never returns a hit missing metadata or score; provenance is mandatory"
+    },
+    {
+      "id": "h3",
+      "kind": "honesty",
+      "text": "consumers calling eidetic over the subprocess boundary inherit no eidetic dependencies; eidetic itself declares its required store deps (neo4j and pymongo) and reaches embeddings and rerank over HTTP, so the dependency surface never crosses into consumers"
+    },
+    {
+      "id": "h4",
+      "kind": "honesty",
+      "text": "teken cli doctor --strict stays green: each new noun group exposes overview, a learn entry, and an explain catalog"
+    },
+    {
+      "id": "c12",
+      "kind": "requirement",
+      "text": "every record belongs to a scope (namespace) labeled public or private; recall is scope-aware and records in a private scope never leak into a public scope recall; private scopes such as Claude-agent memory are local-only; eidetic replaces the existing ~/.claude memory skill, which becomes a thin client over remember and recall"
+    },
+    {
+      "id": "h12",
+      "kind": "honesty",
+      "text": "a recall in a public scope never returns a record from a private scope, proven by an isolation test; and the existing memory skill facts round-trip through eidetic remember and recall"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "summary": "Record envelope and content hashing (eidetic/memory/record.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a Record carries id, text, type, hash, metadata, scope, and score and round-trips to and from a dict; hash derives deterministically from text when omitted; identical text yields an identical hash"
+      ],
+      "deps": [],
+      "covers": [
+        "c8",
+        "h1"
+      ]
+    },
+    {
+      "id": "t2",
+      "summary": "Scope model with public or private visibility and an isolation guard (eidetic/memory/scope.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a Scope has a name and a visibility of public or private; an isolation guard prevents records in a private scope from satisfying a public scope query; the default scope is configurable"
+      ],
+      "deps": [],
+      "covers": [
+        "c6",
+        "h10"
+      ]
+    },
+    {
+      "id": "t3",
+      "summary": "Backend protocol and registry with files as default (eidetic/memory/backend.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "Backend is a protocol exposing upsert(record) and search(query, top_k, scope, filters); a registry resolves a backend by name with files as the default; selecting an unavailable backend raises CliError rather than leaking a traceback"
+      ],
+      "deps": [],
+      "covers": []
+    },
+    {
+      "id": "t4",
+      "summary": "model-gear embeddings and reranker client over stdlib HTTP with lexical fallback (eidetic/memory/embed.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "embed posts to the model-gear v1 embeddings endpoint using only stdlib urllib with no third-party import; rerank is isolated behind the same client; when no endpoint is configured a deterministic lexical fallback scorer is used; nothing here adds to project dependencies"
+      ],
+      "deps": [],
+      "covers": [
+        "h3"
+      ]
+    },
+    {
+      "id": "t5",
+      "summary": "Files backend: zero-dep JSONL store with idempotent upsert and cosine search (eidetic/memory/backends/files.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a JSONL-per-scope store under a data directory; upsert by id or hash is idempotent so the same id twice yields one record updated in place; search ranks by cosine over embeddings with a lexical fallback and applies scope and facet filters; records persist and are retrievable across separate process invocations"
+      ],
+      "deps": [
+        "t1",
+        "t2",
+        "t3",
+        "t4"
+      ],
+      "covers": [
+        "c3",
+        "h7",
+        "h1"
+      ]
+    },
+    {
+      "id": "t6",
+      "summary": "Neo4j backend, required, logic adapted from data-refinery (eidetic/memory/backends/neo4j.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a required neo4j backend (neo4j is a declared dependency); upsert via MERGE keyed on id; search via a vector index returns text, metadata, and score; the cypher and embedding logic is adapted from data-refinery (cite-don't-import), not depending on its qq_memory database; the driver import is local to the module to keep CLI startup fast"
+      ],
+      "deps": [
+        "t1",
+        "t2",
+        "t3",
+        "t14"
+      ],
+      "covers": []
+    },
+    {
+      "id": "t7",
+      "summary": "Mongo backend, required, own schema adapted from data-refinery (eidetic/memory/backends/mongo.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a required mongo backend (pymongo is a declared dependency) using eidetic's own database and collections, not the qq_memory database; upsert by id is idempotent; search returns hits with metadata and score and respects scope; the store logic is adapted from data-refinery (cite-don't-import); the pymongo import is local to the module"
+      ],
+      "deps": [
+        "t1",
+        "t2",
+        "t3",
+        "t14"
+      ],
+      "covers": []
+    },
+    {
+      "id": "t8",
+      "summary": "remember verb: one JSON object or NDJSON on stdin, idempotent upsert (eidetic/cli/_commands/remember.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "remember accepts one JSON object as an argument or NDJSON on stdin with one record per line; each record upserts idempotently; --scope sets the namespace; --json emits a structured result and text mode a summary; re-ingesting the same id leaves the record count unchanged; bad input raises CliError with a hint and no traceback"
+      ],
+      "deps": [
+        "t1",
+        "t3",
+        "t5"
+      ],
+      "covers": [
+        "c7",
+        "h11",
+        "c8"
+      ]
+    },
+    {
+      "id": "t9",
+      "summary": "recall verb: top-k ranked hits with text, full metadata, score, and scope isolation (eidetic/cli/_commands/recall.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "recall query --top-k N returns records ranked by relevance, each with text plus full metadata plus score; --scope filters by namespace and a public scope recall never returns a private scope record; recall never emits a hit missing metadata or score; facet filters such as source, channel, time window, paper, topic are supported; --json supported"
+      ],
+      "deps": [
+        "t1",
+        "t2",
+        "t3",
+        "t5"
+      ],
+      "covers": [
+        "c5",
+        "h9",
+        "h2",
+        "c12",
+        "h12"
+      ]
+    },
+    {
+      "id": "t10",
+      "summary": "Register remember and recall in the CLI parser (eidetic/cli/__init__.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "python -m eidetic remember and python -m eidetic recall resolve and run; the previously absent commands are now registered in _build_parser; failures still raise CliError so no traceback leaks; the stdout and stderr split is preserved"
+      ],
+      "deps": [
+        "t8",
+        "t9"
+      ],
+      "covers": [
+        "c4",
+        "h8"
+      ]
+    },
+    {
+      "id": "t11",
+      "summary": "Rubric-green docs surface for remember and recall: explain catalog, learn, overview",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "explain remember and explain recall return verbatim markdown; learn lists remember and recall with purpose, exit codes, and --json; overview includes both verbs; uv run teken cli doctor . --strict stays green"
+      ],
+      "deps": [
+        "t8",
+        "t9"
+      ],
+      "covers": [
+        "h4"
+      ]
+    },
+    {
+      "id": "t12",
+      "summary": "Scope-isolation test: no private-to-public leak (tests/test_scope_isolation.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a test stores a private scope record and asserts that a public scope recall never returns it on the files backend; the test fails if scope isolation regresses"
+      ],
+      "deps": [
+        "t9"
+      ],
+      "covers": [
+        "h10",
+        "h12"
+      ]
+    },
+    {
+      "id": "t13",
+      "summary": "End-to-end and multi-consumer contract test (tests/test_e2e_memory.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "an end-to-end test runs batch NDJSON ingest then recall --top-k --json and asserts metadata and score are present and a duplicate-id re-ingest leaves the count unchanged; a discord record, a research record, and a private claude-memory record all round-trip with no per-consumer code; the #3 path is exercised via subprocess using python -m eidetic with no extra dependencies; memory-skill style facts round-trip through remember and recall"
+      ],
+      "deps": [
+        "t8",
+        "t9",
+        "t10"
+      ],
+      "covers": [
+        "c1",
+        "h5",
+        "c2",
+        "h6"
+      ]
+    },
+    {
+      "id": "t14",
+      "summary": "Declare neo4j and pymongo as dependencies and update the zero-dep docs (pyproject.toml, CLAUDE.md, README)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "pyproject.toml declares neo4j and pymongo in dependencies; CLAUDE.md and README no longer claim a zero-dep runtime and instead state that consumers stay dependency-free via the subprocess boundary while eidetic depends on neo4j and pymongo; uv sync installs them"
+      ],
+      "deps": [],
+      "covers": [
+        "h3"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "text": "adapt data-refinery's store, embedding, and cypher logic into eidetic (cite-don't-import) for the required Neo4j and Mongo backends, with eidetic owning its own schema rather than depending on the qq_memory database",
+      "kind": "follow_up",
+      "task_id": null
+    },
+    {
+      "id": "r2",
+      "text": "confirm the model-gear embeddings and reranker endpoint contract: base URL, model id, the v1 embeddings request and response shape, and the rerank API shape",
+      "kind": "unknown_nonblocking",
+      "task_id": null
+    },
+    {
+      "id": "r3",
+      "text": "decide the private-scope local store location and per-host layout for Claude-agent memory",
+      "kind": "unknown_nonblocking",
+      "task_id": null
+    }
+  ]
+}

@@ -137,7 +137,7 @@
         },
         {
           "id": "h3",
-          "text": "the runtime keeps dependencies empty; heavy embedding and store deps live only behind the eidetic process boundary",
+          "text": "consumers calling eidetic over the subprocess boundary inherit no eidetic dependencies; eidetic itself declares its required store deps (neo4j and pymongo) and reaches embeddings and rerank over HTTP, so the dependency surface never crosses into consumers",
           "status": "confirmed"
         },
         {
@@ -172,7 +172,7 @@
     {
       "id": "c11",
       "kind": "decision",
-      "text": "memory storage is a pluggable backend supporting files, neo4j, and mongo; embeddings and reranking go through model-gear over HTTP; data-refinery is the backing store and will be improved by adding the missing ingest upsert and vector search and by wiring the currently unused mongo; the files backend keeps the default zero-dep while neo4j and mongo deps are optional and lazy-imported behind backend selection",
+      "text": "memory storage is a pluggable backend; the files backend is the lightweight default for private and local scopes (no database needed); Neo4j and Mongo are required backends for shared and public scopes, with their store, embedding, and cypher logic adapted from data-refinery (cite-don't-import) rather than depending on its qq_memory database or instance; eidetic declares neo4j and pymongo as dependencies; embeddings and reranking go through model-gear over HTTP",
       "origin": "user",
       "status": "confirmed",
       "honesty_conditions": [],
