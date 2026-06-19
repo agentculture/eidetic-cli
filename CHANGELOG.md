@@ -13,10 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pluggable storage backends selectable via --backend: files (zero-dep default, JSONL), Neo4j, and Mongo
 - Per-scope public/private visibility with a load-bearing no-private-to-public-leak invariant
 - model-gear / OpenAI-compatible embeddings + rerank client over stdlib HTTP with a deterministic offline lexical fallback
+- `docker-compose.yml` — eidetic owns its own Neo4j + Mongo stores (distinct ports; the memory layer itself, not reliant on any other project's running stack)
 
 ### Changed
 
 - Neo4j and Mongo are now required runtime dependencies (neo4j, pymongo); the runtime is no longer zero-dependency — consumers stay dependency-free via the subprocess boundary
+
+### Fixed
+
+- `recall --backend mongo` no longer raises on a record stored without an embedding (it is skipped)
+- `remember` rejects a malformed `scope` field with a clean `CliError` instead of an unexpected error
 
 ## [0.2.2] - 2026-06-19
 
