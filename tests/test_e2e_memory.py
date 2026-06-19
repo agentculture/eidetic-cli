@@ -13,8 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 def _cli(
     args: list[str], stdin: str | None = None, data_dir: str | None = None

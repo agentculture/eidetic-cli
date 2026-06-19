@@ -14,7 +14,7 @@ from eidetic.memory.scope import Scope, can_serve
 
 _DEFAULT_URI = "bolt://localhost:7687"
 _DEFAULT_USER = "neo4j"
-_DEFAULT_PASSWORD = "REDACTED"
+_DEFAULT_PASSWORD = "REDACTED"  # nosec B105 - local-dev default (data-refinery)
 
 
 class Neo4jBackend:

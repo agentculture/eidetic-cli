@@ -127,7 +127,7 @@ class EmbedClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req) as resp:  # noqa: S310
+        with urllib.request.urlopen(req) as resp:  # noqa: S310  # nosec B310
             body = json.loads(resp.read())
         # Sort by index to preserve input order
         items: list[tuple[int, list[float]]] = []
@@ -151,7 +151,7 @@ class EmbedClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req) as resp:  # noqa: S310
+        with urllib.request.urlopen(req) as resp:  # noqa: S310  # nosec B310
             body = json.loads(resp.read())
         results: list[dict[str, Any]] = body.get("results", body)
         # Build a map index -> score, then return in doc order
