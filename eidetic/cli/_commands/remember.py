@@ -56,6 +56,13 @@ def _build_records(args: argparse.Namespace) -> list[Record]:
                 remediation="each record must have 'id' and 'text' keys",
             )
         if "scope" in d:
+            sc = d["scope"]
+            if not isinstance(sc, dict) or "name" not in sc or "visibility" not in sc:
+                raise CliError(
+                    code=EXIT_USER_ERROR,
+                    message="record 'scope' must be an object with 'name' and 'visibility'",
+                    remediation="omit 'scope' to use the --scope/--visibility flags instead",
+                )
             records.append(Record.from_dict(d))
         else:
             records.append(

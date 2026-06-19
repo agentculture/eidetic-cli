@@ -95,9 +95,11 @@ into) is *where* that weight lives: call `model-gear`'s OpenAI-compatible
 `/v1/embeddings` and reranker over HTTP — no extra dep — or
 lazy-import a vector store behind the CLI. Either way, keep the heavy deps behind
 eidetic's *process* boundary so consumers stay dependency-free; that
-subprocess-not-import shape is the whole reason this is a CLI. The sibling
-`../autonomous-intelligence/data-refinery` (local neo4j + mongo) is the candidate
-backing store for the graph/RAG side. Build memory as new noun groups (`remember`,
+subprocess-not-import shape is the whole reason this is a CLI. eidetic owns its
+own neo4j + mongo via `docker-compose.yml` (`docker compose up`); the
+store/cypher/embedding logic is adapted from the sibling
+`../autonomous-intelligence/data-refinery` (cite-don't-import), but eidetic is the
+memory layer itself — not reliant on data-refinery's running stack. Build memory as new noun groups (`remember`,
 `recall`, …) on top of the scaffold per the **Architecture** pattern below — and
 keep each one rubric-green (`overview`, `learn` entry, `explain` catalog).
 

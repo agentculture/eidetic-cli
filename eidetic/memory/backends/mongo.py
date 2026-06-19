@@ -24,7 +24,7 @@ class MongoBackend:
         db: str | None = None,
     ) -> None:
         self._client: MongoClient | None = client
-        self._uri = uri or os.environ.get("EIDETIC_MONGO_URI") or "mongodb://localhost:27017"
+        self._uri = uri or os.environ.get("EIDETIC_MONGO_URI") or "mongodb://localhost:27018"
         self._db_name = db or os.environ.get("EIDETIC_MONGO_DB") or "eidetic_memory"
         self._embed = EmbedClient()
 
@@ -77,7 +77,10 @@ class MongoBackend:
             record = Record.from_dict(doc)
             if not can_serve(scope, record.scope):
                 continue
-            score = cosine(query_emb, doc["embedding"])
+            embedding = doc.get("embedding")
+            if embedding is None:
+                continue
+            score = cosine(query_emb, embedding)
             record.score = score
             results.append((score, record))
 
