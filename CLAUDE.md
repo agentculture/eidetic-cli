@@ -16,7 +16,42 @@ top of this scaffold — it does not replace it.
 The runtime package has **zero third-party dependencies** (`dependencies = []`).
 `teken` and the lint/test tooling are dev-only. Keep it that way: the
 self-contained runtime is a load-bearing property (the `whoami`/`doctor`
-commands even parse `culture.yaml` by hand rather than import a YAML library).
+commands even parse `culture.yaml` by hand rather than import a YAML library) —
+but see **Planned domain** below, where that property meets its first real test.
+
+## Planned domain: the memory surface (not yet built)
+
+The scaffold's reason to exist is a memory layer that doesn't exist yet. Two open
+issues are the source of truth for its contract — **read them before writing any
+`remember`/`recall` code**; the sketch here is orientation only, not a spec:
+
+- **[#3] First consumer — `jetson-ai-lab-cli`.** A read-only Discord/docs agent
+  needs `eidetic remember` (ingest) and `eidetic recall "<query>"` (top-k
+  semantic retrieval) across a CLI subprocess boundary: JSON in/out, plus a
+  **batch NDJSON-on-stdin** ingest path for bulk re-index. **Provenance is
+  mandatory** on recall — every hit returns its `text` + full `metadata`
+  (`source`, channel, author, timestamp, permalink) + a `score`, because the
+  consumer builds *cited* answers. Ingest must be idempotent: upsert by
+  `id`/`hash`, never duplicate. Public data only.
+
+- **[#1] Research-flow role.** In the split-agent pipeline
+  `arxivist → tensor-cli → reduce-cli → prove-cli → eidetic-cli`, eidetic is the
+  *durable* end — it stores paper records, idea-space maps, claim graphs,
+  proofs/refutations, and reusable lemmas, and exposes them back to earlier
+  stages on later runs. It does **not** discover, conjecture, decompose, or
+  prove; it only remembers and retrieves.
+
+**This is where the zero-dep property meets its first real test.** A memory layer
+needs embeddings + a store, and the deliberate decision (not a default to drift
+into) is *where* that weight lives: call `model-gear`'s OpenAI-compatible
+`/v1/embeddings` and reranker over HTTP — keeping `dependencies = []` — or
+lazy-import a vector store behind the CLI. Either way, keep the heavy deps behind
+eidetic's *process* boundary so consumers stay dependency-free; that
+subprocess-not-import shape is the whole reason this is a CLI. The sibling
+`../autonomous-intelligence/data-refinery` (local neo4j + mongo) is the candidate
+backing store for the graph/RAG side. Build memory as new noun groups (`remember`,
+`recall`, …) on top of the scaffold per the **Architecture** pattern below — and
+keep each one rubric-green (`overview`, `learn` entry, `explain` catalog).
 
 ## Commands
 

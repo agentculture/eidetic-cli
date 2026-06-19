@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-06-19
+
+### Changed
+
+- CLAUDE.md — added a **Planned domain: the memory surface** section that orients a future instance toward the not-yet-built `remember`/`recall` memory layer, sourced from the two open contracts: issue #3 (the `jetson-ai-lab-cli` consumer — CLI subprocess, JSON in/out, NDJSON-stdin batch ingest, mandatory provenance on recall, idempotent upsert) and issue #1 (eidetic as the durable end of the `arxivist → tensor-cli → reduce-cli → prove-cli → eidetic-cli` research flow). Flags the zero-dep property's first real decision point: model-gear `/v1/embeddings`+reranker over HTTP vs. a lazy-imported vector store, with `data-refinery` (neo4j + mongo) as the candidate backing store.
+
+### Fixed
+
+- README.md quickstart commands — `uv run eidetic-cli whoami`/`learn` did not resolve to a script (the console script is `eidetic`, not `eidetic-cli`); corrected to `uv run eidetic …`, matching the gotcha already documented in CLAUDE.md.
+- README.md rename count — `~100 places` corrected to `~30 files`, consistent with CLAUDE.md's `git grep -lI` figure (the authoritative rename procedure the README points to).
+
 ## [0.2.1] - 2026-06-13
 
 ### Changed
