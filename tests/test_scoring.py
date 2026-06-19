@@ -106,19 +106,48 @@ def test_approximate_returns_all_with_scores() -> None:
 
 def test_hybrid_offline_degrades_to_keyword_only() -> None:
     # Offline embeddings are hash junk -> alpha collapses to 0 (keyword-only).
-    # The doc with the query term must rank above the one without, which scores 0.
+    # The doc with the query term is kept; the one with no overlap blends to 0.0
+    # and is dropped (same as keyword mode).
     cands = [_rec("a", "jetson nano power modes"), _rec("b", "unrelated content here")]
     out = rank("hybrid", "jetson power", cands, _offline_embed(), top_k=10, alpha=0.9)
-    assert out[0].id == "a"
-    by_id = {r.id: r.score for r in out}
-    assert by_id["a"] > 0.0
-    assert by_id["b"] == 0.0  # no keyword overlap, offline so vector ignored
+    assert [r.id for r in out] == ["a"]
+    assert out[0].score is not None and out[0].score > 0.0
 
 
-def test_hybrid_keeps_all_candidates() -> None:
+def test_hybrid_drops_zero_blended_score() -> None:
+    # A record matching neither signal (offline -> keyword-only, no overlap)
+    # gets a 0.0 blend and is dropped, not returned as top-k padding.
     cands = [_rec("a", "alpha term"), _rec("b", "no overlap")]
     out = rank("hybrid", "alpha", cands, _offline_embed(), top_k=10)
-    assert len(out) == 2  # unlike keyword mode, hybrid keeps zero-overlap docs
+    assert [r.id for r in out] == ["a"]
+
+
+class _FakeOnlineEmbed:
+    """An embed client that reports online=True; the query matches the LAST doc.
+
+    For a batch [query, doc0, doc1, ...] it returns vectors so the query is
+    identical to the final doc and orthogonal to the rest — lets us test the
+    online alpha blend deterministically without a server.
+    """
+
+    def embed_detect(self, texts: list[str]):  # type: ignore[no-untyped-def]
+        n = len(texts)
+        vectors = [[1.0]] + [[0.0]] * (n - 2) + [[1.0]]
+        return vectors, True
+
+    def embed(self, texts: list[str]):  # type: ignore[no-untyped-def]
+        return self.embed_detect(texts)[0]
+
+
+def test_hybrid_online_keeps_vector_only_match() -> None:
+    # Online, hybrid keeps a record that has NO keyword overlap but a strong
+    # vector match — the very thing keyword mode would drop. (review #6)
+    cands = [_rec("a", "alpha term"), _rec("b", "zzz unrelated")]
+    embed = _FakeOnlineEmbed()  # query is closest to doc "b"
+    hybrid_ids = {r.id for r in rank("hybrid", "alpha", cands, embed, top_k=10, alpha=0.5)}
+    keyword_ids = {r.id for r in rank("keyword", "alpha", cands, embed, top_k=10)}
+    assert hybrid_ids == {"a", "b"}  # b kept via the vector signal
+    assert keyword_ids == {"a"}  # keyword drops b (no term overlap)
 
 
 # -- guards ----------------------------------------------------------------

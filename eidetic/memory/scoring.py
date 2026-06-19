@@ -204,7 +204,12 @@ def _score_hybrid(
 
     vec_norm = _minmax(vec_scores)
     kw_norm = _minmax(kw_scores)
-    return [
+    blended = [
         (eff_alpha * vec_norm[i] + (1.0 - eff_alpha) * kw_norm[i], candidates[i])
         for i in range(len(candidates))
     ]
+    # A 0.0 blend means neither the vector nor the keyword signal placed the
+    # record above the batch floor — drop it as a non-match. This keeps hybrid
+    # consistent with keyword mode (and with offline hybrid, which collapses to
+    # keyword-only) instead of padding top-k with irrelevant records.
+    return [(score, rec) for score, rec in blended if score > 0.0]

@@ -163,28 +163,32 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
 
-    # --- Public recall: must return discord + research, NEVER private ---
-    result = _cli(
-        ["recall", "notes", "--top-k", "10", "--json"],
-        data_dir=data_dir,
-    )
+    # --- Public recall: each public record is recallable by a matching query,
+    #     metadata round-trips verbatim, and the private record NEVER leaks.
+    #     (hybrid drops non-matches, so each query targets the record whose
+    #     provenance it verifies.) ---
+    result = _cli(["recall", "standup notes", "--top-k", "10", "--json"], data_dir=data_dir)
     assert result.returncode == 0
-    public_hits = json.loads(result.stdout)
-    public_ids = {h["id"] for h in public_hits}
-
-    assert "discord-1" in public_ids, "public recall must return the discord record"
-    assert "research-1" in public_ids, "public recall must return the research record"
-    assert "claude-private-1" not in public_ids, "public recall must NOT return the private record"
-
-    # Verify metadata round-trips verbatim
-    discord_hit = next(h for h in public_hits if h["id"] == "discord-1")
+    discord_hits = json.loads(result.stdout)
+    discord_ids = {h["id"] for h in discord_hits}
+    assert "discord-1" in discord_ids, "public recall must return the discord record"
+    assert "claude-private-1" not in discord_ids, "public recall must NOT return the private record"
+    discord_hit = next(h for h in discord_hits if h["id"] == "discord-1")
     assert discord_hit["metadata"]["source"] == "discord"
     assert discord_hit["metadata"]["channel"] == "general"
     assert discord_hit["metadata"]["author"] == "alice"
     assert discord_hit["metadata"]["timestamp"] == "2024-01-15T10:00:00Z"
     assert discord_hit["metadata"]["permalink"] == "https://discord.com/channels/123/456/789"
 
-    research_hit = next(h for h in public_hits if h["id"] == "research-1")
+    result = _cli(["recall", "transformer paper", "--top-k", "10", "--json"], data_dir=data_dir)
+    assert result.returncode == 0
+    research_hits = json.loads(result.stdout)
+    research_ids = {h["id"] for h in research_hits}
+    assert "research-1" in research_ids, "public recall must return the research record"
+    assert (
+        "claude-private-1" not in research_ids
+    ), "public recall must NOT return the private record"
+    research_hit = next(h for h in research_hits if h["id"] == "research-1")
     assert research_hit["metadata"]["paper"] == "Attention Is All You Need"
     assert research_hit["metadata"]["producer"] == "research-team"
 

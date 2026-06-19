@@ -86,10 +86,16 @@ bash .claude/skills/recall/scripts/recall.sh "thermal throttle" --mode keyword \
   installed, otherwise `uv run --project <eidetic-cli checkout> eidetic explain
   recall`. (`explain` is an **`eidetic`** verb — a sibling tool like `devex`
   won't know it.)
-- **Reading scores:** `exact` and `keyword` drop non-matching records, so every
-  hit is a real match. `hybrid` (and `approximate`) keep all candidates and rank
-  them, so a hit with `score` `0.0` is a *non-match* padding the top-k — ignore
-  it, or lower `--top-k`. A score threshold/`--min-score` is a tracked follow-up.
+- **Reading scores:** `exact`, `keyword`, and `hybrid` drop non-matching records
+  (hybrid drops any record with a `0.0` blended score), so their hits are real
+  matches. `approximate` keeps every candidate ranked by raw cosine, so it can
+  return low/near-zero scores when the store is small — lower `--top-k` to trim.
+  A `--min-score` threshold is a tracked follow-up.
+- **Sharing scope = one OS user.** The default store is `~/.eidetic/memory`, so
+  every agent/process running as the *same* OS user shares it (that is the point —
+  Claude + colleague). It is not isolated between OS users by anything but file
+  permissions; keep genuinely private data in a `--visibility private` scope and
+  treat the host as the trust boundary.
 
 ## Provenance
 
