@@ -19,8 +19,8 @@ from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
 
-def _build_records(args: argparse.Namespace) -> list[Record]:
-    """Parse input into a list of Record instances."""
+def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
+    """Parse input into a list of raw dicts (one JSON object or NDJSON stdin)."""
     if args.record is not None:
         try:
             data = json.loads(args.record)
@@ -30,59 +30,58 @@ def _build_records(args: argparse.Namespace) -> list[Record]:
                 message=f"invalid JSON: {exc}",
                 remediation="pass one JSON object string, or NDJSON on stdin",
             ) from exc
-        inputs: list[dict[str, Any]] = [data]
-    else:
-        raw = sys.stdin.read()
-        inputs = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                inputs.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise CliError(
-                    code=EXIT_USER_ERROR,
-                    message=f"invalid JSON on line: {exc}",
-                    remediation="each non-blank stdin line must be a valid JSON object",
-                ) from exc
+        return [data]
 
-    records: list[Record] = []
-    for d in inputs:
-        if "id" not in d or "text" not in d:
+    raw = sys.stdin.read()
+    inputs: list[dict[str, Any]] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            inputs.append(json.loads(line))
+        except json.JSONDecodeError as exc:
             raise CliError(
                 code=EXIT_USER_ERROR,
-                message="record missing required key 'id' or 'text'",
-                remediation="each record must have 'id' and 'text' keys",
+                message=f"invalid JSON on line: {exc}",
+                remediation="each non-blank stdin line must be a valid JSON object",
+            ) from exc
+    return inputs
+
+
+def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
+    """Validate *d* and construct a Record, using *args* for scope defaults."""
+    if "id" not in d or "text" not in d:
+        raise CliError(
+            code=EXIT_USER_ERROR,
+            message="record missing required key 'id' or 'text'",
+            remediation="each record must have 'id' and 'text' keys",
+        )
+    if "scope" in d:
+        sc = d["scope"]
+        if not isinstance(sc, dict) or "name" not in sc or "visibility" not in sc:
+            raise CliError(
+                code=EXIT_USER_ERROR,
+                message="record 'scope' must be an object with 'name' and 'visibility'",
+                remediation="omit 'scope' to use the --scope/--visibility flags instead",
             )
-        if "scope" in d:
-            sc = d["scope"]
-            if not isinstance(sc, dict) or "name" not in sc or "visibility" not in sc:
-                raise CliError(
-                    code=EXIT_USER_ERROR,
-                    message="record 'scope' must be an object with 'name' and 'visibility'",
-                    remediation="omit 'scope' to use the --scope/--visibility flags instead",
-                )
-            records.append(Record.from_dict(d))
-        else:
-            records.append(
-                Record(
-                    id=d["id"],
-                    text=d["text"],
-                    type=d.get("type", "note"),
-                    hash=d.get("hash", ""),
-                    metadata=d.get("metadata", {}),
-                    scope=Scope(args.scope, args.visibility),
-                )
-            )
-    return records
+        return Record.from_dict(d)
+    return Record(
+        id=d["id"],
+        text=d["text"],
+        type=d.get("type", "note"),
+        hash=d.get("hash", ""),
+        metadata=d.get("metadata", {}),
+        scope=Scope(args.scope, args.visibility),
+    )
 
 
 def cmd_remember(args: argparse.Namespace) -> int:
-    records = _build_records(args)
+    inputs = _collect_inputs(args)
     backend = get_backend(args.backend)
     ids: list[str] = []
-    for record in records:
+    for d in inputs:
+        record = _record_from_input(d, args)
         backend.upsert(record)
         ids.append(record.id)
 

@@ -24,13 +24,13 @@ services:
       - "7687:7687"   # bolt protocol  (NEO4J_URI=bolt://localhost:7687)
       - "7474:7474"   # browser UI
     environment:
-      NEO4J_AUTH: neo4j/REDACTED
+      NEO4J_AUTH: none
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
       - ./.data/neo4j/data:/data
       - ./.data/neo4j/logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p REDACTED 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell 'RETURN 1' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5

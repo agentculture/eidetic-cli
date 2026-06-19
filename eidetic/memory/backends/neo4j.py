@@ -14,7 +14,6 @@ from eidetic.memory.scope import Scope, can_serve
 
 _DEFAULT_URI = "bolt://localhost:7687"
 _DEFAULT_USER = "neo4j"
-_DEFAULT_PASSWORD = "REDACTED"  # nosec B105 - local-dev default (docker-compose.yml)
 
 
 class Neo4jBackend:
@@ -107,9 +106,12 @@ class Neo4jBackend:
             ) from exc
         uri = self._uri or os.environ.get("NEO4J_URI", _DEFAULT_URI)
         user = self._user or os.environ.get("NEO4J_USER", _DEFAULT_USER)
-        password = self._password or os.environ.get("NEO4J_PASSWORD", _DEFAULT_PASSWORD)
+        password = self._password or os.environ.get("NEO4J_PASSWORD")
         try:
-            self._driver = neo4j.GraphDatabase.driver(uri, auth=(user, password))
+            if password:
+                self._driver = neo4j.GraphDatabase.driver(uri, auth=(user, password))
+            else:
+                self._driver = neo4j.GraphDatabase.driver(uri)
         except Exception as exc:
             raise CliError(
                 code=EXIT_ENV_ERROR,
