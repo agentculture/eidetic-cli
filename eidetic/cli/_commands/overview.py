@@ -30,6 +30,8 @@ _VERBS = [
     "explain <path> — markdown docs for a topic",
     "overview — this descriptive snapshot",
     "doctor — check the agent-identity invariants",
+    "remember — ingest memory records (JSON or NDJSON)",
+    "recall — search the memory store",
 ]
 
 

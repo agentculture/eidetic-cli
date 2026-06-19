@@ -115,6 +115,65 @@ itself (distinct from the global `overview`, which describes the agent).
     eidetic-cli cli overview --json
 """
 
+_REMEMBER = """\
+# eidetic-cli remember
+
+Ingest one or more memory records. Accepts a single JSON object as a positional
+argument, or NDJSON from stdin for bulk ingest. Each record is upserted
+(idempotent by id) into the configured memory backend.
+
+## Flags
+
+- `--backend` — memory backend to use: `files`, `neo4j`, or `mongo` (default:
+  `files`).
+- `--scope` — scope name for the record(s) (default: `default`).
+- `--visibility` — record visibility: `public` or `private` (default: `public`).
+- `--json` — emit structured JSON output.
+
+## Exit codes
+
+- `0` success
+- `1` user-input error (invalid JSON, missing required keys)
+
+## Behavior
+
+Each record must contain `id` and `text` keys. When a positional JSON argument
+is given, it is parsed as a single record. When omitted, stdin is read as
+NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a record
+with the same `id` overwrites the previous value.
+"""
+
+_RECALL = """\
+# eidetic-cli recall
+
+Search the memory store and return matching records. Returns top-k hits, each
+with text, full metadata, and a relevance score. Scope-aware: queries respect
+the configured scope and visibility, with no private-to-public leak.
+
+## Flags
+
+- `--top-k` — maximum number of results to return (default: 5).
+- `--filter KEY=VALUE` — metadata facet filter; repeatable.
+- `--backend` — storage backend to query: `files`, `neo4j`, or `mongo` (default:
+  `files`).
+- `--scope` — query scope name (default: `default`).
+- `--visibility` — query scope visibility: `public` or `private` (default:
+  `public`).
+- `--json` — emit results as a JSON list to stdout.
+
+## Exit codes
+
+- `0` success
+- `1` user-input error (malformed filter, missing query)
+
+## Behavior
+
+Returns up to `--top-k` hits sorted by relevance score. Each hit includes the
+record text, all metadata fields, and a numeric score. Scope is enforced at
+query time: a query with `--visibility public` never returns records marked
+private, preventing accidental private-to-public leaks.
+"""
+
 
 ENTRIES: dict[tuple[str, ...], str] = {
     (): _ROOT,
@@ -130,4 +189,6 @@ ENTRIES: dict[tuple[str, ...], str] = {
     ("doctor",): _DOCTOR,
     ("cli",): _CLI,
     ("cli", "overview"): _CLI,
+    ("remember",): _REMEMBER,
+    ("recall",): _RECALL,
 }
