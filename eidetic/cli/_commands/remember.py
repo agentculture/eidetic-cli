@@ -57,6 +57,8 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
             message="record missing required key 'id' or 'text'",
             remediation="each record must have 'id' and 'text' keys",
         )
+    # score is recall-only; never store a caller-supplied score
+    d = {k: v for k, v in d.items() if k != "score"}
     if "scope" in d:
         sc = d["scope"]
         if not isinstance(sc, dict) or "name" not in sc or "visibility" not in sc:
@@ -65,8 +67,10 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
                 message="record 'scope' must be an object with 'name' and 'visibility'",
                 remediation="omit 'scope' to use the --scope/--visibility flags instead",
             )
-        return Record.from_dict(d)
-    return Record(
+        record = Record.from_dict(d)
+        record.score = None
+        return record
+    record = Record(
         id=d["id"],
         text=d["text"],
         type=d.get("type", "note"),
@@ -74,6 +78,8 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
         metadata=d.get("metadata", {}),
         scope=Scope(args.scope, args.visibility),
     )
+    record.score = None
+    return record
 
 
 def cmd_remember(args: argparse.Namespace) -> int:

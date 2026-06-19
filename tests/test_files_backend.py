@@ -116,3 +116,52 @@ def test_search_results_carry_score_and_metadata(backend: FilesBackend) -> None:
     r = hit[0]
     assert isinstance(r.score, float)
     assert r.metadata == {"tag": "test"}
+
+
+# -- scope file collision ------------------------------------------------
+
+
+def test_scope_file_no_collision_same_name_different_visibility(
+    backend: FilesBackend,
+) -> None:
+    """Records with the same id in public and private scopes of the same name
+    persist independently (no overwrite), and public search never returns private."""
+    pub_scope = Scope(name="x", visibility="public")
+    priv_scope = Scope(name="x", visibility="private")
+
+    backend.upsert(_make_record(rid="r1", text="public text", scope=pub_scope))
+    backend.upsert(_make_record(rid="r1", text="private text", scope=priv_scope))
+
+    # Public search should only return the public record
+    pub_results = backend.search("text", top_k=10, scope=pub_scope, filters=None)
+    pub_hits = [r for r in pub_results if r.id == "r1"]
+    assert len(pub_hits) == 1
+    assert pub_hits[0].text == "public text"
+
+    # Private search should only return the private record
+    priv_results = backend.search("text", top_k=10, scope=priv_scope, filters=None)
+    priv_hits = [r for r in priv_results if r.id == "r1"]
+    assert len(priv_hits) == 1
+    assert priv_hits[0].text == "private text"
+
+
+# -- corrupt JSONL guard -------------------------------------------------
+
+
+def test_corrupt_jsonl_raises_cli_error(backend: FilesBackend, tmp_path: pytest.Path) -> None:
+    """A JSONL file with a corrupt line raises CliError, not a bare exception."""
+    from eidetic.cli._errors import CliError
+
+    # Write a file with a corrupt line
+    corrupt_file = tmp_path / "corrupt.jsonl"
+    corrupt_file.write_text(
+        '{"id": "ok", "text": "fine", "type": "note", "hash": "h", "metadata": {}, "scope": {"name": "d", "visibility": "public"}}\n'
+        "this is not json\n",
+        encoding="utf-8",
+    )
+
+    # Force the backend to read from this path
+    backend._base = tmp_path
+    with pytest.raises(CliError) as exc_info:
+        backend.search("fine", top_k=10, scope=Scope(name="d", visibility="public"), filters=None)
+    assert exc_info.value.code == 2  # EXIT_ENV_ERROR

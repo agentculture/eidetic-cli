@@ -208,3 +208,39 @@ def test_malformed_scope_raises_cli_error(tmp_data_dir: str) -> None:
     with pytest.raises(CliError) as exc_info:
         args.func(args)
     assert exc_info.value.code == EXIT_USER_ERROR
+
+
+def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
+    """A record JSON that includes 'score' results in a stored record with score=None."""
+    record_json = json.dumps({"id": "sc1", "text": "scored", "score": 0.9})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "scored", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "sc1"]
+    assert len(hit) == 1
+    # The stored record's score should be None (not 0.9)
+    # Note: search will set score during retrieval, so we check the raw file
+    import json as _json
+    from pathlib import Path
+
+    data_dir = Path(tmp_data_dir)
+    jsonl_files = list(data_dir.glob("*.jsonl"))
+    assert len(jsonl_files) == 1
+    lines = jsonl_files[0].read_text(encoding="utf-8").strip().splitlines()
+    stored = _json.loads(lines[0])
+    assert stored["score"] is None

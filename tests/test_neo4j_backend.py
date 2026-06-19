@@ -126,6 +126,40 @@ def test_search_returns_records_with_score() -> None:
     assert isinstance(r.score, float)
 
 
+def test_search_uses_stored_embedding() -> None:
+    """search uses the node's stored embedding for cosine score when present."""
+    rec = _make_record(rid="e1", text="embedded record")
+    node = _fake_node(rec)
+    # The fake node already has an embedding; ensure search uses it
+    # rather than re-embedding. We verify by checking that the EmbedClient
+    # embed() is NOT called for scoring (only for the query).
+    driver = _fake_driver([node])
+    backend = Neo4jBackend(driver=driver)
+
+    # Patch the embed client to track calls
+    original_embed = backend._embed.embed
+    embed_calls: list[list[str]] = []
+
+    def tracked_embed(texts: list[str]) -> list[list[float]]:
+        embed_calls.append(texts)
+        return original_embed(texts)
+
+    backend._embed.embed = tracked_embed
+
+    results = backend.search(
+        "embedded",
+        top_k=10,
+        scope=Scope(name="default", visibility="public"),
+        filters=None,
+    )
+
+    assert len(results) == 1
+    # Only the query embedding should be called (1 call), not re-embedding
+    # the record text (which would be a 2nd call).
+    assert len(embed_calls) == 1
+    assert embed_calls[0] == ["embedded"]
+
+
 def test_search_respects_top_k() -> None:
     """search returns at most top_k records."""
     recs = [_make_record(rid=f"t{i}", text=f"record {i}") for i in range(5)]

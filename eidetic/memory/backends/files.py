@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import Backend
 from eidetic.memory.embed import EmbedClient, cosine
 from eidetic.memory.record import Record
@@ -82,7 +83,7 @@ class FilesBackend:
 
     def _scope_file(self, scope: Scope) -> Path:
         safe = scope.name.replace("/", "_").replace("\\", "_")
-        return self._base / f"{safe}.jsonl"
+        return self._base / f"{safe}__{scope.visibility}.jsonl"
 
     def _load(self, path: Path) -> list[Record]:
         if not path.exists():
@@ -91,7 +92,14 @@ class FilesBackend:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line:
-                records.append(Record.from_dict(json.loads(line)))
+                try:
+                    records.append(Record.from_dict(json.loads(line)))
+                except (json.JSONDecodeError, KeyError) as exc:
+                    raise CliError(
+                        code=EXIT_ENV_ERROR,
+                        message=f"corrupt line in {path.name}: {exc}",
+                        remediation=f"remove or repair the corrupt line in {path}",
+                    ) from exc
         return records
 
     def _save(self, path: Path, records: list[Record]) -> None:

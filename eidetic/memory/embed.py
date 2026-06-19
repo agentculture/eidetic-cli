@@ -21,6 +21,7 @@ from typing import Any
 _DEFAULT_BASE_URL = "http://localhost:8101/v1"
 _DEFAULT_MODEL = "text-embedding-3-small"
 _EMBED_DIM = 128
+_EMBED_TIMEOUT: float = float(os.environ.get("EIDETIC_EMBED_TIMEOUT", "10"))
 
 
 # -----------------------------------------------------------------------
@@ -127,7 +128,9 @@ class EmbedClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req) as resp:  # noqa: S310  # nosec B310
+        with urllib.request.urlopen(
+            req, timeout=_EMBED_TIMEOUT
+        ) as resp:  # noqa: S310  # nosec B310
             body = json.loads(resp.read())
         # Sort by index to preserve input order
         items: list[tuple[int, list[float]]] = []
@@ -151,7 +154,9 @@ class EmbedClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req) as resp:  # noqa: S310  # nosec B310
+        with urllib.request.urlopen(
+            req, timeout=_EMBED_TIMEOUT
+        ) as resp:  # noqa: S310  # nosec B310
             body = json.loads(resp.read())
         results: list[dict[str, Any]] = body.get("results", body)
         # Build a map index -> score, then return in doc order

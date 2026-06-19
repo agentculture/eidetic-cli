@@ -54,3 +54,19 @@ def test_cosine_orthogonal() -> None:
     a = [1.0, 0.0]
     b = [0.0, 1.0]
     assert abs(cosine(a, b)) < 1e-9
+
+
+def test_embed_offline_fallback_deterministic() -> None:
+    """embed() returns the deterministic local fallback when offline (no network)."""
+    client = EmbedClient(base_url="http://localhost:0/nope")
+    text = "offline test"
+    v1 = client.embed([text])[0]
+    v2 = client.embed([text])[0]
+    # Both calls must return the same deterministic vector
+    assert v1 == v2
+    # The vector must be non-empty and L2-normalised
+    assert len(v1) > 0
+    import math
+
+    norm = math.sqrt(sum(x * x for x in v1))
+    assert abs(norm - 1.0) < 1e-6

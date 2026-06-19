@@ -84,7 +84,10 @@ class Neo4jBackend:
                 continue
             if filters and not self._matches_filters(record, filters):
                 continue
-            score = cosine(query_emb, self._embed.embed([record.text])[0])
+            score = cosine(
+                query_emb,
+                node.get("embedding") or self._embed.embed([record.text])[0],
+            )
             record.score = score
             candidates.append(record)
 
