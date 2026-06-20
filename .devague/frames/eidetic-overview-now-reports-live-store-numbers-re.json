@@ -1,0 +1,201 @@
+{
+  "slug": "eidetic-overview-now-reports-live-store-numbers-re",
+  "title": "eidetic overview now reports live store numbers \u2014 records per backend, per scope, distinct authors, and link-connections \u2014 and narrows to a single scope or backend on demand",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-20T05:50:12Z",
+  "updated": "2026-06-20T05:57:55Z",
+  "claims": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic overview now reports live store numbers \u2014 records per backend, per scope, distinct authors, and link-connections \u2014 and narrows to a single scope or backend on demand",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h1",
+          "text": "the live numbers are computed solely from backend.all() and reflect what is actually stored \u2014 total/per-scope/connection counts are reproducible from a fresh enumeration, not cached or estimated",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "an agent (or operator) introspecting the eidetic memory store via the CLI, plus the agent-first rubric that gates overview",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h2",
+          "text": "the Store section is fully available under --json (machine-readable) on the same stdout stream, so an agent can consume counts + per-backend status without scraping text",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c3",
+      "kind": "after_state",
+      "text": "running 'eidetic overview' shows a live Store section \u2014 total records, a per-backend breakdown (files/mongo/graph), per-scope counts (name+visibility+lifecycle), distinct authors, and counted link-connections \u2014 alongside the existing identity/verbs/artifacts",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h3",
+          "text": "every count in the Store section is derived purely by iterating backend.all() and grouping in-process; rendering one backend never requires another to be reachable",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c4",
+      "kind": "after_state",
+      "text": "an agent can narrow with 'overview --backend mongo' (one store) or 'overview --scope qq' (one scope) to get a focused snapshot instead of the whole store",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h4",
+          "text": "--backend X restricts the section to store X; --scope Y restricts counts to records whose scope.name==Y; an unknown scope yields an explicit zero-count section, not an error or a crash",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "a static snapshot can't tell an agent whether memory is populated, how it's distributed across scopes, or whether a backend is even reachable \u2014 the numbers turn overview from a brochure into an operational probe",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h8",
+          "text": "a reachable-but-empty backend (0 records) is reported distinctly from an unreachable backend ('unavailable: <reason>'), so the numbers genuinely answer 'is memory populated AND is each store reachable'",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c6",
+      "kind": "before_state",
+      "text": "overview prints only static identity/verbs/artifacts and never touches the store; an agent must run recall blindly to discover whether anything is even stored",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h9",
+          "text": "this accurately describes today's overview.py: agent_sections() returns only Identity/Verbs/Sibling-pattern artifacts and no code path in the overview handler calls into eidetic.memory",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c7",
+      "kind": "boundary",
+      "text": "not a real graph traversal \u2014 'connections' is the count of link-references (links + supersedes) read off record properties; neo4j stores these as node properties, not edges, so no edge-walking is implied",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h6",
+          "text": "the 'connections' number equals the total count of link-references (len(links)+ (1 if supersedes else 0)) summed across counted records, and the label/help text states it counts references, not graph edges",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c8",
+      "kind": "boundary",
+      "text": "not a new verb and not a schema change \u2014 this extends the existing 'overview' verb and only reads via backend.all(); storage format and record schema are untouched",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h10",
+          "text": "no new top-level verb is registered; the 'overview' parser gains --store/--backend/--scope flags only, and the catalog/learn/_VERBS docs surfaces are updated in lockstep so the rubric's docs-consistency checks stay green",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c9",
+      "kind": "non_goal",
+      "text": "does not add a hard always-on dependency on mongo/neo4j being up \u2014 a down backend degrades to an 'unavailable' line, never a crash",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c10",
+      "kind": "success_signal",
+      "text": "'overview <bogus-path>' and 'overview' against a down mongo/neo4j both still exit 0; the teken --strict rubric stays green; --json carries the structured store payload",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h5",
+          "text": "with mongo AND graph both down, 'overview --store' prints each as 'unavailable: <reason>' and still exits 0; 'overview <bogus>' still exits 0; 'teken cli doctor . --strict' stays green; bare 'overview' performs zero store I/O",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c11",
+      "kind": "decision",
+      "text": "store stats are opt-in: bare 'overview' stays static + never touches the store (preserving never-fail + the cli-noun reuse of agent_sections); 'overview --store' adds the live Store section. --backend/--scope imply --store.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h7",
+          "text": "bare 'overview' and 'cli overview' produce byte-identical output to today (no store I/O, no new section); only an explicit --store/--backend/--scope adds the section",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c12",
+      "kind": "decision",
+      "text": "the Store section probes all three backends by default and reports each as live-with-counts or unavailable-with-reason (connection status is first-class, per the operator's 'report if connected/live' note)",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c13",
+      "kind": "decision",
+      "text": "distinct-authors/'users' line is deferred to a follow-up issue (no first-class who-added field exists; author lives only in free-form metadata.author). The first cut omits it rather than implying a user model.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    }
+  ],
+  "open_vagueness": []
+}

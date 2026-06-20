@@ -34,7 +34,7 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `whoami` | Report this agent's nick, version, backend, and model from `culture.yaml`. |
 | `learn` | Print a structured self-teaching prompt. |
 | `explain <path>` | Markdown docs for any noun/verb path. |
-| `overview` | Read-only descriptive snapshot of the agent. |
+| `overview` | Read-only snapshot of the agent **plus** a live Store section covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope + lifecycle breakdown, and link-connections. Narrow with `--backend`/`--scope`. A down backend degrades to `unavailable` via a fast probe (never crashes). |
 | `doctor` | Check the agent-identity invariants (prompt-file-present, backend-consistency). |
 | `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; stamps `created` date; accepts `supersedes`/`links`; `--backend`/`--scope`/`--visibility`. |
 | `recall <query>` | Search the store — top-k hits with text + full metadata + `score` + `signal`; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Lifecycle flags: `--include-shadowed`, `--include-archived` (both excluded by default). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. |

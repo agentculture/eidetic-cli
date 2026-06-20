@@ -77,6 +77,12 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
                 message="record 'scope' must be an object with 'name' and 'visibility'",
                 remediation="omit 'scope' to use the --scope/--visibility flags instead",
             )
+        # hash/metadata are optional per the record contract (hash is derived from
+        # text when blank). from_dict reads them as required keys, so supply the
+        # same defaults the no-scope path below uses — otherwise an inline-scope
+        # record without them KeyErrors instead of upserting (broke #3's NDJSON path).
+        d.setdefault("hash", "")
+        d.setdefault("metadata", {})
         record = Record.from_dict(d)
         record.score = None
         return record
