@@ -231,3 +231,6 @@ skills.local.yaml
 
 # eidetic-owned store volumes (docker-compose.yml)
 /.data/
+
+# devague working state (not committed by default)
+.devague/reviews/
