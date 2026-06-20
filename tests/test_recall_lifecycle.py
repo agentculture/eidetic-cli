@@ -351,3 +351,31 @@ def test_reinforcement_verified_by_second_recall(data_dir: str, capsys) -> None:
     assert (
         hit2["recall_count"] == 6
     ), f"second recall should emit bumped count=6, got {hit2['recall_count']}"
+
+
+def test_passive_reinforcement_does_not_persist_score_or_signal(data_dir: str, capsys) -> None:
+    """Recall reinforcement must write durable state only — never the query-time
+    score/signal (score is recall-output-only; signal is recomputed each query).
+
+    Regression for qodo "Recall upsert() persists score": the bumped copy used
+    to carry the ranked score and the output signal straight into the store.
+    """
+    backend = get_backend("files")
+    backend.upsert(_make_record("noleak1", "score leak regression record"))
+
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "score leak regression", "--mode", "exact", "--json"])
+    assert args.func(args) == 0
+    emitted = json.loads(capsys.readouterr().out)
+    # The emitted hit still exposes both (output contract is unchanged)...
+    hit = next(h for h in emitted if h["id"] == "noleak1")
+    assert hit["score"] is not None
+    assert hit["signal"] is not None
+
+    # ...but the persisted record must carry neither.
+    stored = next(r for r in get_backend("files").all() if r.id == "noleak1")
+    assert stored.score is None, "score must never be persisted (recall-output-only)"
+    assert stored.signal is None, "signal must never be persisted (recomputed at query time)"
+    # Durable reinforcement state was still written.
+    assert stored.recall_count == 1
+    assert stored.last_recall is not None

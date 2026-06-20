@@ -129,6 +129,12 @@ def cmd_recall(args: argparse.Namespace) -> int:
         bumped = copy.copy(hit)
         bumped.recall_count = hit.recall_count + 1
         bumped.last_recall = now_iso
+        # Query-time fields must never be persisted: `score` is recall-output
+        # only, and `signal` is recomputed on every recall.  Clear them on the
+        # copy so reinforcement writes back durable state only (and so the
+        # mongo/neo4j upsert path is not handed a stale score to store).
+        bumped.score = None
+        bumped.signal = None
         backend.upsert(bumped)
 
     return 0

@@ -64,6 +64,13 @@ class Record:
     def __post_init__(self) -> None:
         if not self.hash:
             object.__setattr__(self, "hash", _hash_text(self.text))
+        # `links` must always be a list: callers (and JSON carrying
+        # "links": null or a non-list) can set it to None, which would crash
+        # `len(record.links)` in signal scoring.  Normalise at this single
+        # construction chokepoint so every code path is safe.
+        if not isinstance(self.links, list):
+            coerced = list(self.links) if isinstance(self.links, (tuple, set)) else []
+            object.__setattr__(self, "links", coerced)
 
     @staticmethod
     def _hash(text: str) -> str:

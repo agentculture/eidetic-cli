@@ -202,3 +202,34 @@ def test_links_default_not_shared_mutable() -> None:
     r2 = _minimal_record()
     r1.links.append("x")
     assert "x" not in r2.links
+
+
+def test_links_none_coerced_to_empty_list() -> None:
+    """links=None (e.g. JSON "links": null) must normalise to [] at construction.
+
+    Regression for qodo "Null links breaks signal": signal scoring calls
+    len(record.links), which crashes when links is None.
+    """
+    rec = _minimal_record(links=None)
+    assert rec.links == []
+
+
+def test_from_dict_null_links_coerced_to_empty_list() -> None:
+    """A stored/ingested dict carrying "links": null loads with links == []."""
+    data = {
+        "id": "nl-1",
+        "text": "null links record",
+        "type": "note",
+        "hash": "h",
+        "metadata": {},
+        "scope": {"name": "default", "visibility": "public"},
+        "links": None,
+    }
+    rec = Record.from_dict(data)
+    assert rec.links == []
+
+
+def test_non_list_links_coerced() -> None:
+    """A tuple/set links value is coerced to a list; other junk becomes []."""
+    assert _minimal_record(links=("a", "b")).links == ["a", "b"]
+    assert _minimal_record(links="not-a-list").links == []

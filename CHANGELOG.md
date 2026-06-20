@@ -23,6 +23,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - recall output now exposes the freshness signal alongside the lexical score, and recalling a record passively reinforces it (bumps last_recall + recall_count)
 - README.md and CLAUDE.md document the built memory surface (freshness signal, no-delete shadow/archive lifecycle, QQ migration); CLAUDE.md no longer states the memory surface is unbuilt
 
+### Fixed
+
+- Recall reinforcement no longer persists query-time fields: the bumped copy now clears score and signal before upsert, so the recall-output-only score never leaks into the store and mongo/neo4j skip redundant per-hit re-embedding (qodo review)
+- Neo4j backend now persists and reloads the temporal/lifecycle fields (created, last_recall, recall_count, links, supersedes, lifecycle); previously they were dropped on --backend neo4j so recall reinforcement and sweep could not round-trip there (qodo review)
+- Record.links is normalised to a list at construction, so JSON carrying "links": null (or a non-list) no longer crashes signal scoring's len(record.links) during recall/sweep (qodo review)
+
 ## [0.4.0] - 2026-06-19
 
 ### Added
