@@ -493,3 +493,252 @@ def test_ingest_idempotent_with_created_and_supersedes_links(tmp_data_dir: str) 
     assert hit.created == "2025-01-20T00:00:00+00:00"
     assert hit.supersedes == "old2"
     assert hit.links == ["ref2", "ref3"]
+
+
+# --- t2 tests: added_by stamping at ingest ---
+
+
+def test_ingest_stamps_added_by_with_agent_nick(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record without 'added_by' gets stamped with the agent nick from read_agent_fields."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "test-agent")
+    record_json = json.dumps({"id": "ab1", "text": "no added_by field", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "added_by", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab1"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "test-agent"
+
+
+def test_ingest_resolves_nick_once_per_batch(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bulk NDJSON ingest resolves the agent nick ONCE, not per record (Qodo PR #10).
+
+    The stamp value is constant across the batch, so culture.yaml must not be
+    re-read for every record.
+    """
+    import eidetic.cli._commands.remember as rem_mod
+
+    calls = {"n": 0}
+
+    def _counting_nick() -> str:
+        calls["n"] += 1
+        return "batch-agent"
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", _counting_nick)
+    lines = [json.dumps({"id": f"bn{i}", "text": f"record {i}", "type": "note"}) for i in range(3)]
+    monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(lines)))
+    args = _build_parser().parse_args(
+        ["remember", "--backend", "files", "--scope", "default", "--visibility", "public"]
+    )
+    assert args.func(args) == 0
+
+    # nick resolved exactly once for the whole 3-record batch
+    assert calls["n"] == 1
+    backend = get_backend("files")
+    results = backend.search(
+        "record", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    stamped = [r for r in results if r.id.startswith("bn")]
+    assert len(stamped) == 3
+    assert all(r.added_by == "batch-agent" for r in stamped)
+
+
+def test_ingest_preserves_explicit_added_by_in_json(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record with 'added_by' present in the JSON has it preserved verbatim."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "some-agent")
+    record_json = json.dumps(
+        {"id": "ab2", "text": "explicit added_by", "type": "note", "added_by": "custom-author"}
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "added_by", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab2"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "custom-author"
+
+
+def test_ingest_added_by_flag_wins_over_nick(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--added-by flag value takes priority over the agent nick."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "nick-from-yaml")
+    record_json = json.dumps({"id": "ab3", "text": "flag wins", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+            "--added-by",
+            "explicit-flag-author",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "wins", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab3"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "explicit-flag-author"
+
+
+def test_ingest_added_by_flag_preserves_json_value(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If 'added_by' is explicit in the JSON, --added-by flag does NOT override it."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "nick-from-yaml")
+    record_json = json.dumps(
+        {
+            "id": "ab4",
+            "text": "json added_by beats flag",
+            "type": "note",
+            "added_by": "json-author",
+        }
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+            "--added-by",
+            "flag-author",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "beats", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab4"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "json-author"
+
+
+def test_ingest_added_by_none_when_nick_unresolved_and_no_flag(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When nick is unresolved (None) and no --added-by flag, added_by is None."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: None)
+    record_json = json.dumps({"id": "ab5", "text": "no added_by resolved", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "resolved", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab5"]
+    assert len(hit) == 1
+    assert hit[0].added_by is None
+
+
+def test_ingest_added_by_stamped_when_suffix_equals_fallback(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: when culture.yaml IS present and suffix == 'eidetic-cli', the nick
+    is stamped as-is — NOT treated as 'unresolved' and collapsed to None.
+
+    This guards the bug where `nick == _FALLBACK_NICK` caused the real configured
+    eidetic-cli agent to never attribute its own records (issue #8).
+    """
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "find_culture_yaml", lambda: Path("/fake/repo/culture.yaml"))
+    monkeypatch.setattr(
+        rem_mod,
+        "read_agent_fields",
+        lambda: {"nick": "eidetic-cli", "backend": "claude", "model": "unknown"},
+    )
+
+    record_json = json.dumps({"id": "ab6", "text": "suffix equals fallback", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "suffix", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab6"]
+    assert len(hit) == 1
+    # Must be "eidetic-cli", NOT None — the suffix IS the real identity here.
+    assert hit[0].added_by == "eidetic-cli"

@@ -96,6 +96,14 @@ records, **not** graph edges (neo4j stores these as node properties). Narrow wit
 status probe — `overview` still exits 0. (`cli overview` describes the CLI surface
 and does not touch the store.)
 
+### Contributors per scope
+
+Each per-scope entry in the Store section includes a `contributors` list — the
+sorted union of all distinct `added_by` values and `metadata.author` values found
+in that scope's records. `added_by` is auto-stamped by `remember` from the
+ingesting agent's mesh nick (see `eidetic-cli explain remember`). This lets you
+see at a glance which agents or authors have contributed to each scope.
+
 ## Usage
 
     eidetic-cli overview
@@ -142,6 +150,9 @@ argument, or NDJSON from stdin for bulk ingest. Each record is upserted
   `files`).
 - `--scope` — scope name for the record(s) (default: `default`).
 - `--visibility` — record visibility: `public` or `private` (default: `public`).
+- `--added-by` — override the agent identity stamped on ingested records.
+  Defaults to the agent's mesh nick (resolved from `culture.yaml`); falls back
+  to `None` when no `culture.yaml` is present.
 - `--json` — emit structured JSON output.
 
 ## Exit codes
@@ -155,6 +166,16 @@ Each record must contain `id`, `text`, and `type` keys. When a positional JSON
 argument is given, it is parsed as a single record. When omitted, stdin is read
 as NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a
 record with the same `id` overwrites the previous value.
+
+### added_by stamping
+
+`remember` auto-stamps `added_by` on every ingested record unless the field is
+already present in the record JSON. Resolution order: (1) the `--added-by` flag
+value, (2) the agent's mesh nick from `culture.yaml`, (3) `None`. An explicit
+value in the record JSON is always preserved verbatim — `--added-by` does not
+overwrite it. The field is returned by `recall` and is used by `overview` to
+compute the contributor list for each scope (union of `added_by` and
+`metadata.author`).
 """
 
 _RECALL = """\

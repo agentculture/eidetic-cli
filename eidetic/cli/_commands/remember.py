@@ -13,11 +13,27 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from eidetic.cli._commands.whoami import find_culture_yaml, read_agent_fields
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
+
+
+def _resolve_nick() -> str | None:
+    """Return the agent nick from culture.yaml, or None if culture.yaml is absent.
+
+    Returns None only when culture.yaml cannot be found (e.g. a wheel install
+    where no culture.yaml ships alongside the package). When culture.yaml IS
+    present, the suffix it declares — even if it happens to equal the module
+    default — is the agent's real configured mesh identity and is returned as-is.
+    """
+    # No culture.yaml at all (e.g. wheel install) => no agent identity to stamp.
+    if find_culture_yaml() is None:
+        return None
+    nick = read_agent_fields().get("nick")
+    return nick or None
 
 
 def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -50,8 +66,31 @@ def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
     return inputs
 
 
-def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
-    """Validate *d* and construct a Record, using *args* for scope defaults."""
+def _resolve_stamp_added_by(args: argparse.Namespace) -> str | None:
+    """Compute the added_by value to stamp on records lacking one.
+
+    Resolution order: ``--added-by`` flag > agent nick (from culture.yaml) > None.
+    Constant for a given invocation, so callers resolve it ONCE and thread it
+    through the ingest loop rather than re-reading culture.yaml per record.
+    """
+    flag_value = getattr(args, "added_by", None)
+    return flag_value if flag_value is not None else _resolve_nick()
+
+
+_UNRESOLVED = object()
+
+
+def _record_from_input(
+    d: dict[str, Any],
+    args: argparse.Namespace,
+    stamp_added_by: Any = _UNRESOLVED,
+) -> Record:
+    """Validate *d* and construct a Record, using *args* for scope defaults.
+
+    *stamp_added_by* is the pre-resolved value to stamp when the record carries
+    no ``added_by`` (the batch path resolves it once and passes it in). When left
+    unset, it is resolved per call — preserving the standalone contract.
+    """
     missing = [k for k in ("id", "text", "type") if k not in d]
     if missing:
         raise CliError(
@@ -65,6 +104,14 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
     # t4: stamp created date if not provided by the caller
     if "created" not in d:
         d["created"] = datetime.now(timezone.utc).isoformat()
+
+    # t2: stamp added_by if not present in the record JSON.
+    # Resolution order: --added-by flag > agent nick > None.
+    # An explicit value in the record JSON is always preserved verbatim.
+    if "added_by" not in d:
+        if stamp_added_by is _UNRESOLVED:
+            stamp_added_by = _resolve_stamp_added_by(args)
+        d["added_by"] = stamp_added_by
 
     # t4: preserve supersedes and links from input
     # (from_dict and Record() both handle these via defaults)
@@ -96,6 +143,7 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
         created=d.get("created"),
         supersedes=d.get("supersedes"),
         links=d.get("links", []),
+        added_by=d.get("added_by"),
     )
     record.score = None
     return record
@@ -104,9 +152,13 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
 def cmd_remember(args: argparse.Namespace) -> int:
     inputs = _collect_inputs(args)
     backend = get_backend(args.backend)
+    # Resolve the stamp value ONCE per invocation — it is constant across the
+    # batch, so re-reading culture.yaml per record on a bulk NDJSON ingest is
+    # avoidable filesystem overhead (Qodo PR #10).
+    stamp_added_by = _resolve_stamp_added_by(args)
     ids: list[str] = []
     for d in inputs:
-        record = _record_from_input(d, args)
+        record = _record_from_input(d, args, stamp_added_by)
         backend.upsert(record)
         ids.append(record.id)
 
@@ -144,6 +196,15 @@ def register(sub: argparse._SubParsersAction) -> None:
         choices=["public", "private"],
         default="public",
         help="Record visibility (default: public).",
+    )
+    p.add_argument(
+        "--added-by",
+        default=None,
+        dest="added_by",
+        help=(
+            "Override the agent identity stamped on ingested records. "
+            "Defaults to the agent's mesh nick; falls back to None."
+        ),
     )
     p.add_argument(
         "--json",

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-20
+
+### Added
+
+- First-class `added_by` attribution field on every record envelope, so two agents writing into the same shared scope are distinguishable (issue #8)
+- `remember --added-by <nick>` flag; `added_by` is auto-stamped at ingest when absent (resolution: record JSON / `--added-by` > agent mesh nick from culture.yaml > None), and explicit values are preserved verbatim
+- `overview --store` now reports distinct contributors per scope (union of each record `added_by` and legacy `metadata.author`)
+- Neo4j backend round-trips `added_by`; CI pipeline now runs a live neo4j service so the round-trip is proven, not skipped
+
+### Changed
+
+- `learn` and `explain remember`/`explain overview` now teach the `added_by` field, the `--added-by` flag, and the overview contributors line
+
 ## [0.6.0] - 2026-06-20
 
 ### Added

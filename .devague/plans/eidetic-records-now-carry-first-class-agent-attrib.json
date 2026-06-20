@@ -1,0 +1,319 @@
+{
+  "slug": "eidetic-records-now-carry-first-class-agent-attrib",
+  "title": "eidetic records now carry first-class agent attribution: every remembered record records who added it, so two agents writing into the same shared scope are no longer indistinguishable",
+  "frame_slug": "eidetic-records-now-carry-first-class-agent-attrib",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-20T07:44:27Z",
+  "updated": "2026-06-20T08:14:51Z",
+  "targets": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic records now carry first-class agent attribution: every remembered record records who added it, so two agents writing into the same shared scope are no longer indistinguishable"
+    },
+    {
+      "id": "h7",
+      "kind": "honesty",
+      "text": "after this ships, a record remembered by Claude and one remembered by the colleague backend in the same scope are distinguishable by their added_by value"
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "mesh operators and the agents (Claude + colleague backend) that share the ~/.eidetic/memory store; plus overview --store readers asking 'who contributed in this scope'"
+    },
+    {
+      "id": "h9",
+      "kind": "honesty",
+      "text": "the consumers named are real and currently served: the colleague backend shares ~/.eidetic/memory with Claude, and overview --store already renders per-scope stats this can extend"
+    },
+    {
+      "id": "c3",
+      "kind": "before_state",
+      "text": "author identity lives only in free-form metadata.author, populated by exactly one consumer (#3 Discord/docs index); records ingested by mesh agents via remember carry no agent attribution at all"
+    },
+    {
+      "id": "h10",
+      "kind": "honesty",
+      "text": "today's code has no envelope attribution field \u2014 author exists only as free-form metadata.author, set by the #3 Discord/docs path and nothing else"
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "the shared store at ~/.eidetic/memory explicitly enables two agents to write into the same scope; without attribution we cannot answer 'which agent contributed this' or 'how is work split across agents', and the overview authors line stays blocked"
+    },
+    {
+      "id": "h11",
+      "kind": "honesty",
+      "text": "the shared-store design (same scope, two agents) is real and already shipped, so the inability to attribute is a present gap, not hypothetical"
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "not a permissions/identity-verification system: added_by is a free-form trust-on-write string, not authenticated; not a recall contributor-facet (deferred follow-up); not a rewrite of legacy metadata.author"
+    },
+    {
+      "id": "h12",
+      "kind": "honesty",
+      "text": "added_by is stored verbatim with no verification step, no recall --added-by facet is added, and existing metadata.author values are never mutated by this change"
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "remember stamps added_by when absent and preserves an explicit value; the field round-trips on all three backends; legacy records with no added_by load cleanly as None; overview --store reports distinct contributors per scope"
+    },
+    {
+      "id": "h13",
+      "kind": "honesty",
+      "text": "each clause is independently testable: stamp-when-absent, preserve-explicit, 3-backend round-trip, legacy-loads-None, overview-distinct-contributors"
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "Record gains an added_by: str | None = None envelope field, enumerated in both to_dict() and from_dict() (from_dict via .get with None default, mirroring the t1 fields)"
+    },
+    {
+      "id": "h1",
+      "kind": "honesty",
+      "text": "a Record built with added_by set survives to_dict -> from_dict identical, and from_dict on a dict lacking 'added_by' yields added_by == None"
+    },
+    {
+      "id": "c9",
+      "kind": "requirement",
+      "text": "remember auto-stamps added_by when absent from the input record, and preserves an explicit added_by passed in the record JSON or via a --added-by flag (mirroring how created is stamped)"
+    },
+    {
+      "id": "h2",
+      "kind": "honesty",
+      "text": "remember with no added_by in input stamps the resolved identity; remember with added_by present in the record JSON (or --added-by) keeps that exact value, verbatim"
+    },
+    {
+      "id": "c10",
+      "kind": "requirement",
+      "text": "added_by persists and round-trips on all three backends \u2014 files and mongo automatically via to_dict/from_dict, neo4j via an explicit Cypher SET property plus _node_to_record mapping"
+    },
+    {
+      "id": "h3",
+      "kind": "honesty",
+      "text": "an upsert -> reload cycle returns added_by unchanged on files, mongo, and neo4j (neo4j proven by a round-trip test, since it maps fields explicitly)"
+    },
+    {
+      "id": "c11",
+      "kind": "requirement",
+      "text": "legacy records persisted before this field exists load cleanly with added_by == None on every backend"
+    },
+    {
+      "id": "h4",
+      "kind": "honesty",
+      "text": "loading a stored record/node written without the added_by key/property returns a Record with added_by == None and raises no error on any backend"
+    },
+    {
+      "id": "c13",
+      "kind": "requirement",
+      "text": "docs updated: CLAUDE.md record-schema table gets an added_by row and README reflects the field + --added-by flag"
+    },
+    {
+      "id": "h6",
+      "kind": "honesty",
+      "text": "the CLAUDE.md record-schema table lists added_by with its semantics and the README documents the --added-by flag; doc-test-alignment / markdownlint stay green"
+    },
+    {
+      "id": "c14",
+      "kind": "after_state",
+      "text": "a first-class added_by field on the Record envelope is auto-stamped by remember at ingest (resolved as: explicit value in the record JSON or --added-by flag, else the agent's mesh nick, else None), round-trips verbatim across files/mongo/neo4j, and lets overview --store report distinct contributors per scope"
+    },
+    {
+      "id": "h14",
+      "kind": "honesty",
+      "text": "the resolution order (record JSON / --added-by -> agent nick -> None) is implemented and the field survives an upsert/reload on every backend"
+    },
+    {
+      "id": "c15",
+      "kind": "requirement",
+      "text": "overview --store reports distinct contributors per scope, computed in the pure compute_stats by unioning each record's added_by with its legacy metadata.author (so old #3 Discord-indexed records still surface their author)"
+    },
+    {
+      "id": "h8",
+      "kind": "honesty",
+      "text": "compute_stats over records returns the correct per-(scope,visibility) distinct-contributor set = union of added_by and metadata.author; total/active/shadowed/archived/connections fields are unchanged"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "summary": "Add added_by field to the Record envelope (record.py): added_by: str | None = None, enumerated in to_dict() and from_dict() (from_dict via .get(...,None) like the t1 fields)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "Record(...).to_dict() includes 'added_by'; from_dict round-trips a record with added_by set to an equal Record",
+        "Record.from_dict on a dict lacking 'added_by' yields record.added_by is None with no KeyError"
+      ],
+      "deps": [],
+      "covers": [
+        "c8",
+        "h1",
+        "c11",
+        "h4",
+        "c1",
+        "c3",
+        "h10"
+      ]
+    },
+    {
+      "id": "t2",
+      "summary": "remember stamps added_by at ingest (remember.py): resolve absent value as --added-by flag > agent mesh nick (read_agent_fields) > None; preserve an explicit value from the record JSON or flag verbatim; add the --added-by argument",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "remember on a record JSON lacking added_by stamps the resolved agent nick; a value present in the JSON or via --added-by is preserved verbatim",
+        "resolution order is flag > nick > None (no env var); when nick is unresolved and no flag given, added_by is None"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c9",
+        "h2",
+        "c14",
+        "h14",
+        "h7",
+        "c5",
+        "h11",
+        "c6",
+        "h12"
+      ]
+    },
+    {
+      "id": "t3",
+      "summary": "Round-trip added_by on the neo4j backend (neo4j.py): add m.added_by to the Cypher SET clause + params dict and map it in _node_to_record(); add a neo4j round-trip test",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "neo4j upsert -> reload returns added_by unchanged; a node written without the added_by property loads as added_by is None"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c10",
+        "h3"
+      ]
+    },
+    {
+      "id": "t4",
+      "summary": "Verify added_by round-trips on the files and mongo backends via tests (no production change beyond to_dict/from_dict): upsert -> reload equality and legacy-load-None on both",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "files and mongo upsert -> reload return added_by unchanged; a record/doc persisted without added_by loads as None on both backends"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c10",
+        "h3",
+        "c11",
+        "h4"
+      ]
+    },
+    {
+      "id": "t5",
+      "summary": "overview --store reports distinct contributors per scope (stats.py compute_stats + overview.py render): contributor set = union of each record's added_by and its metadata.author",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "compute_stats returns a per-(scope,visibility) distinct-contributor set equal to union(added_by, metadata.author); total/active/shadowed/archived/connections are unchanged",
+        "render_store_text emits a contributors line per scope; --json payload carries the contributor set"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c15",
+        "h8",
+        "c2",
+        "h9"
+      ]
+    },
+    {
+      "id": "t6",
+      "summary": "Docs: add an added_by row to the CLAUDE.md record-schema table and document the --added-by flag + field in README",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "CLAUDE.md record-schema table has an added_by row stating semantics + default resolution; README documents --added-by and the overview contributors line",
+        "markdownlint-cli2 and the doc-test-alignment check stay green"
+      ],
+      "deps": [
+        "t2",
+        "t5"
+      ],
+      "covers": [
+        "c13",
+        "h6"
+      ]
+    },
+    {
+      "id": "t7",
+      "summary": "End-to-end success-signal test: remember(no added_by) -> reload -> overview contributors, asserting stamp/preserve/round-trip/legacy-None/overview across backends (files always; mongo/neo4j skip when unavailable)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "an e2e test on the files backend asserts: stamped nick present, value round-trips, a legacy record loads added_by None, overview lists the contributor; mongo/neo4j variants skip cleanly when the service is down"
+      ],
+      "deps": [
+        "t2",
+        "t3",
+        "t4",
+        "t5"
+      ],
+      "covers": [
+        "c7",
+        "h13"
+      ]
+    },
+    {
+      "id": "t8",
+      "summary": "Update the agent-first in-CLI docs surface to teach the new added_by changes: learn.py (_TEXT/_as_json_payload) and explain/catalog.py entries for remember + overview, so 'eidetic learn' and 'eidetic explain' describe the added_by field, the --added-by flag, and the overview contributors line",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "eidetic learn (text and --json) teaches the added_by field, the --added-by flag, and the overview contributors line",
+        "eidetic explain remember and eidetic explain overview mention added_by; teken cli doctor . --strict rubric stays green"
+      ],
+      "deps": [
+        "t2",
+        "t5"
+      ],
+      "covers": [
+        "c13",
+        "h6"
+      ]
+    },
+    {
+      "id": "t9",
+      "summary": "Add a neo4j service to the GitHub Actions test pipeline (.github/workflows) so the neo4j round-trip test runs live in CI instead of skipping (a live neo4j is available locally for dev too); wire NEO4J_URI/USER/PASSWORD env for the test job",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "the CI workflow provisions a neo4j service and exports NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD; the neo4j round-trip test executes (does not skip) and passes in the GitHub Actions run",
+        "local dev without neo4j still skips the test cleanly rather than failing"
+      ],
+      "deps": [
+        "t3"
+      ],
+      "covers": [
+        "h3"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "text": "neo4j round-trip test (h3) needs a live neo4j; CI/dev without the docker-compose service must skip it cleanly rather than fail",
+      "kind": "unknown_nonblocking",
+      "task_id": "t3"
+    }
+  ]
+}

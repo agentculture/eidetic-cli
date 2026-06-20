@@ -25,8 +25,8 @@ from eidetic.memory.record import Record
 _LIFECYCLES = ("active", "shadowed", "archived")
 
 
-def _empty_lifecycle_bucket() -> dict[str, int]:
-    return {"total": 0, "active": 0, "shadowed": 0, "archived": 0}
+def _empty_lifecycle_bucket() -> dict[str, Any]:
+    return {"total": 0, "active": 0, "shadowed": 0, "archived": 0, "_contributors": set()}
 
 
 def link_references(record: Record) -> int:
@@ -66,9 +66,21 @@ def compute_stats(records: list[Record]) -> dict[str, Any]:
         lifecycle = record.lifecycle if record.lifecycle in _LIFECYCLES else "active"
         bucket[lifecycle] += 1
         connections += link_references(record)
+        # Collect contributors: union of added_by and metadata.get("author").
+        for contributor in (record.added_by, record.metadata.get("author")):
+            if contributor:
+                bucket["_contributors"].add(contributor)
 
     scope_list = [
-        {"name": name, "visibility": visibility, **counts}
+        {
+            "name": name,
+            "visibility": visibility,
+            "total": counts["total"],
+            "active": counts["active"],
+            "shadowed": counts["shadowed"],
+            "archived": counts["archived"],
+            "contributors": sorted(counts["_contributors"]),
+        }
         for (name, visibility), counts in sorted(scopes.items())
     ]
 

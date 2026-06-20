@@ -50,6 +50,7 @@ def test_single_record_one_scope_no_connections() -> None:
             "active": 1,
             "shadowed": 0,
             "archived": 0,
+            "contributors": [],
         }
     ]
 
@@ -145,3 +146,144 @@ def test_unknown_lifecycle_is_bucketed_as_active() -> None:
     assert scope["total"] == 1
     assert scope["active"] == 1
     assert scope["shadowed"] == 0 and scope["archived"] == 0
+
+
+# ---------------------------------------------------------------------------
+# t5: contributors per scope
+# ---------------------------------------------------------------------------
+
+
+def _rec_with_author(
+    rid: str,
+    *,
+    scope: Scope | None = None,
+    added_by: str | None = None,
+    metadata_author: str | None = None,
+    lifecycle: str = "active",
+) -> Record:
+    """Helper to build records with contributor fields set."""
+    meta: dict = {}
+    if metadata_author is not None:
+        meta["author"] = metadata_author
+    return Record(
+        id=rid,
+        text=f"text-{rid}",
+        type="note",
+        hash="",
+        metadata=meta,
+        scope=scope or Scope(name="default", visibility="public"),
+        lifecycle=lifecycle,
+        added_by=added_by,
+    )
+
+
+def test_contributors_union_of_added_by_and_metadata_author() -> None:
+    """Per-scope contributors is the union of added_by and metadata.author."""
+    pub = Scope(name="default", visibility="public")
+    records = [
+        _rec_with_author("a", scope=pub, added_by="alice"),
+        _rec_with_author("b", scope=pub, metadata_author="bob"),
+        _rec_with_author("c", scope=pub, added_by="carol", metadata_author="alice"),
+    ]
+    stats = compute_stats(records)
+    scope_entry = stats["scopes"][0]
+    assert scope_entry["contributors"] == ["alice", "bob", "carol"]
+
+
+def test_contributors_none_and_empty_values_ignored() -> None:
+    """None and empty string contributor values must be excluded."""
+    pub = Scope(name="default", visibility="public")
+    records = [
+        _rec_with_author("a", scope=pub, added_by=None, metadata_author=None),
+        _rec_with_author("b", scope=pub, added_by="", metadata_author=""),
+        _rec_with_author("c", scope=pub, added_by="alice"),
+    ]
+    stats = compute_stats(records)
+    scope_entry = stats["scopes"][0]
+    assert scope_entry["contributors"] == ["alice"]
+
+
+def test_contributors_distinct_per_scope() -> None:
+    """Two scopes maintain independent contributor sets."""
+    qq = Scope(name="qq", visibility="private")
+    pub = Scope(name="default", visibility="public")
+    records = [
+        _rec_with_author("a", scope=qq, added_by="alice"),
+        _rec_with_author("b", scope=qq, metadata_author="bob"),
+        _rec_with_author("c", scope=pub, added_by="charlie"),
+    ]
+    stats = compute_stats(records)
+    by_name = {s["name"]: s for s in stats["scopes"]}
+    assert by_name["qq"]["contributors"] == ["alice", "bob"]
+    assert by_name["default"]["contributors"] == ["charlie"]
+
+
+def test_contributors_same_name_different_visibility_are_independent() -> None:
+    """Same scope name but different visibility keeps independent contributor sets."""
+    pub = Scope(name="qq", visibility="public")
+    priv = Scope(name="qq", visibility="private")
+    records = [
+        _rec_with_author("a", scope=pub, added_by="alice"),
+        _rec_with_author("b", scope=priv, added_by="bob"),
+    ]
+    stats = compute_stats(records)
+    by_kv = {(s["name"], s["visibility"]): s for s in stats["scopes"]}
+    assert by_kv[("qq", "public")]["contributors"] == ["alice"]
+    assert by_kv[("qq", "private")]["contributors"] == ["bob"]
+
+
+def test_existing_fields_unchanged_with_contributors() -> None:
+    """Adding contributors must not change total/active/shadowed/archived/connections."""
+    qq = Scope(name="qq", visibility="private")
+    records = [
+        Record(
+            id="a",
+            text="text-a",
+            type="note",
+            hash="",
+            metadata={},
+            scope=qq,
+            lifecycle="active",
+            links=["b", "x"],
+            supersedes="old1",
+            added_by="alice",
+        ),
+        Record(
+            id="b",
+            text="text-b",
+            type="note",
+            hash="",
+            metadata={"author": "bob"},
+            scope=qq,
+            lifecycle="shadowed",
+        ),
+    ]
+    stats = compute_stats(records)
+    assert stats["total"] == 2
+    assert stats["connections"] == 3  # 2 links + 1 supersedes from record "a"
+    scope_entry = stats["scopes"][0]
+    assert scope_entry["total"] == 2
+    assert scope_entry["active"] == 1
+    assert scope_entry["shadowed"] == 1
+    assert scope_entry["archived"] == 0
+    # contributors set must also be present and correct
+    assert scope_entry["contributors"] == ["alice", "bob"]
+
+
+def test_contributors_sorted_alphabetically() -> None:
+    """Contributors list must be stable-sorted for deterministic output."""
+    pub = Scope(name="default", visibility="public")
+    records = [
+        _rec_with_author("a", scope=pub, added_by="zara"),
+        _rec_with_author("b", scope=pub, metadata_author="alice"),
+        _rec_with_author("c", scope=pub, added_by="mike"),
+    ]
+    stats = compute_stats(records)
+    scope_entry = stats["scopes"][0]
+    assert scope_entry["contributors"] == ["alice", "mike", "zara"]
+
+
+def test_empty_store_contributors_empty_list() -> None:
+    """Empty store yields empty scopes list (no contributor sets to check)."""
+    stats = compute_stats([])
+    assert stats["scopes"] == []
