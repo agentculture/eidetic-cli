@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `overview` now reports a live **Store** section on every call, covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope name+visibility+lifecycle breakdown, and link-connections (counted link/supersedes references, not graph edges). Narrow with `--backend {files,mongo,graph}` or `--scope NAME`. A down backend degrades to an `unavailable` line via a fast status probe (tunable via `EIDETIC_STORE_PROBE_TIMEOUT_MS`) and overview still exits 0. New pure aggregator `eidetic.memory.stats`; backends gained an optional `timeout_ms` for the probe path.
 
+### Fixed
+
+- `remember`: a record carrying an inline `scope` but no `hash`/`metadata` no longer raises `KeyError` — the inline-scope path now applies the same optional-field defaults as the flag-scope path (hash derived from text, metadata defaults to `{}`), restoring the documented optional-`hash`/`metadata` contract and unblocking the batch NDJSON ingest path.
+
 ## [0.5.0] - 2026-06-20
 
 ### Added

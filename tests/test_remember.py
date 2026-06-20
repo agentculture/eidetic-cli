@@ -227,6 +227,36 @@ def test_malformed_scope_raises_cli_error(tmp_data_dir: str) -> None:
     assert exc_info.value.code == EXIT_USER_ERROR
 
 
+def test_inline_scope_without_hash_or_metadata_upserts(tmp_data_dir: str) -> None:
+    """A record with an inline 'scope' but no 'hash'/'metadata' upserts cleanly.
+
+    Regression: the inline-scope branch routed straight to Record.from_dict, which
+    reads 'hash'/'metadata' as required keys, so such a record raised KeyError —
+    contradicting the optional-hash/metadata contract and breaking the #3 NDJSON
+    ingest path. hash must be derived from text, metadata defaults to {}.
+    """
+    record_json = json.dumps(
+        {
+            "id": "is1",
+            "text": "inline scope no hash",
+            "type": "note",
+            "scope": {"name": "qq", "visibility": "private"},
+        }
+    )
+    args = _build_parser().parse_args(["remember", record_json, "--backend", "files"])
+    assert args.func(args) == 0
+
+    backend = get_backend("files")
+    results = backend.search(
+        "inline", top_k=10, scope=Scope(name="qq", visibility="private"), filters=None
+    )
+    hit = [r for r in results if r.id == "is1"]
+    assert len(hit) == 1
+    assert hit[0].hash  # derived from text, not blank
+    assert hit[0].metadata == {}
+    assert hit[0].scope == Scope(name="qq", visibility="private")
+
+
 def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
     """A record JSON that includes 'score' results in a stored record with score=None."""
     record_json = json.dumps({"id": "sc1", "text": "scored", "type": "note", "score": 0.9})
