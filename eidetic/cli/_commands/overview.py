@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import threading
+import time
 from typing import Any
 
 from eidetic.cli._commands.whoami import report
@@ -155,13 +157,50 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
     return {"backend": label, "status": "live", **stats}
 
 
+def _probe_into(label: str, scope_filter: str | None, box: dict[str, Any]) -> None:
+    """Run a probe and stash its result in *box* (target of a daemon thread)."""
+    box["result"] = _probe_backend(label, scope_filter)
+
+
 def store_payload(backend: str | None, scope_filter: str | None) -> dict[str, Any]:
-    """Build the structured Store payload: per-backend probes (+ scope filter)."""
+    """Build the structured Store payload: per-backend probes (+ scope filter).
+
+    Probes run **concurrently**, each under a hard wall-clock **deadline**, so
+    total latency is ~max(probe), not the sum, and a reachable-but-slow backend
+    (whose ``all()`` enumeration outruns the connect timeout) is force-bounded to
+    ``unavailable`` instead of stalling overview. The connect timeout (``timeout_ms``)
+    still gives a down backend its fast, descriptive error first; the deadline is
+    the outer guarantee for the slow-but-reachable case. Threads are daemon so a
+    wedged probe can never block process exit.
+    """
     labels = [backend] if backend else list(_STORE_LABELS)
-    return {
-        "scope_filter": scope_filter,
-        "backends": [_probe_backend(label, scope_filter) for label in labels],
-    }
+    # 2x the connect timeout: a down backend reports its real reason at ~timeout_ms
+    # (well inside this), while a slow enumeration is capped here.
+    deadline_s = max(0.05, (_probe_timeout_ms() * 2) / 1000.0)
+
+    boxes: list[dict[str, Any]] = [{} for _ in labels]
+    threads: list[threading.Thread] = []
+    for label, box in zip(labels, boxes):
+        t = threading.Thread(target=_probe_into, args=(label, scope_filter, box), daemon=True)
+        t.start()
+        threads.append(t)
+
+    deadline = time.monotonic() + deadline_s
+    backends: list[dict[str, Any]] = []
+    for label, box, t in zip(labels, boxes, threads):
+        t.join(max(0.0, deadline - time.monotonic()))
+        if t.is_alive() or "result" not in box:
+            backends.append(
+                {
+                    "backend": label,
+                    "status": "unavailable",
+                    "reason": f"probe exceeded {int(deadline_s * 1000)}ms",
+                }
+            )
+        else:
+            backends.append(box["result"])
+
+    return {"scope_filter": scope_filter, "backends": backends}
 
 
 def render_store_text(payload: dict[str, Any]) -> str:

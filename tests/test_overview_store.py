@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -247,6 +248,30 @@ def test_malformed_record_degrades_not_raises(
     assert main(["overview", "--backend", "mongo", "--json"]) == 0
     backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
     assert backend["status"] == "unavailable"
+
+
+def test_slow_backend_all_is_bounded_by_deadline(
+    data_dir: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A reachable-but-slow backend whose all() outruns the deadline must be
+    # force-bounded to 'unavailable' (not stall overview). Connect timeout only
+    # bounds connection setup; this covers the enumeration runtime (Qodo finding).
+    class _Slow:
+        def all(self) -> list[Record]:
+            time.sleep(3.0)  # far longer than the deadline below
+            return []
+
+    monkeypatch.setenv("EIDETIC_STORE_PROBE_TIMEOUT_MS", "100")  # deadline = 200ms
+    monkeypatch.setattr(ov, "get_backend", lambda name, **kw: _Slow())
+
+    start = time.monotonic()
+    assert main(["overview", "--backend", "mongo", "--json"]) == 0
+    elapsed = time.monotonic() - start
+
+    backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
+    assert backend["status"] == "unavailable"
+    assert "exceeded" in backend["reason"]
+    assert elapsed < 1.5  # bounded well under the 3s sleep — did not hang
 
 
 def test_probe_passes_fast_timeout_to_backend(
