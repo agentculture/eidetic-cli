@@ -6,11 +6,14 @@ description: >
   later. Drives `eidetic remember`: accepts one record as a JSON object, or a
   batch as NDJSON on stdin for bulk ingest. Upsert is idempotent by id (and
   dedups by content hash) — re-remembering updates in place, never duplicates.
-  The store lives at ~/.eidetic/memory (a home-dir path outside any git
-  worktree), so what Claude remembers, the colleague backend can recall (and vice
-  versa). Use when the user says "remember this", "store this", "save to memory",
-  "index these", "eidetic remember", or when something learned this session
-  should outlive it. Public data only. Pairs with the sibling /recall skill.
+  Stamps a `created` date on every record at ingest time. Accepts `supersedes`
+  (id of the record this one replaces, for within-scope shadowing via `sweep`)
+  and `links` (list of related-memory ids). The store lives at
+  ~/.eidetic/memory (a home-dir path outside any git worktree), so what Claude
+  remembers, the colleague backend can recall (and vice versa). Use when the
+  user says "remember this", "store this", "save to memory", "index these",
+  "eidetic remember", or when something learned this session should outlive it.
+  Public data only. Pairs with the sibling /recall skill.
 ---
 
 # remember — write to the shared eidetic memory
@@ -29,6 +32,10 @@ bash .claude/skills/remember/scripts/remember.sh \
 
 # Batch (NDJSON on stdin, one record per line) — for bulk re-index:
 cat records.ndjson | bash .claude/skills/remember/scripts/remember.sh --json
+
+# Record that supersedes an older one (same scope required for sweep to shadow):
+bash .claude/skills/remember/scripts/remember.sh \
+  '{"id":"r2","text":"Updated Orin Nano draw: 10-20W","type":"note","supersedes":"r1","links":["r3"]}' --json
 ```
 
 The wrapper resolves the CLI portably (installed `eidetic` on `PATH`, else
@@ -43,15 +50,33 @@ The wrapper resolves the CLI portably (installed `eidetic` on `PATH`, else
 | `type` | yes | e.g. `note`, `docs`, `discord`, a research object type |
 | `hash` | optional | content hash for dedup; derived from `text` when omitted |
 | `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall |
+| `created` | auto-stamped | ISO-8601 UTC date; stamped at ingest if absent; drives freshness signal age-decay |
+| `supersedes` | optional | id of an earlier same-scope record this one replaces; `sweep` auto-shadows the target |
+| `links` | optional | list of related-memory ids; persisted for future corroboration scoring |
 
-`score` is recall-only and is ignored on ingest. **Public data only** — never
-remember private/role-gated content into the shared store.
+`score` and `signal` are recall-only and are ignored on ingest. **Public data
+only** — never remember private/role-gated content into the shared store.
 
 ## Idempotency
 
 Re-submitting a record with the same `id` overwrites the previous value; a record
 with a matching content `hash` is de-duplicated. So re-running an ingest (e.g. a
 periodic re-scan) is safe and will not create duplicates.
+
+## Lifecycle — supersedes and sweep
+
+Setting `supersedes` on a record declares that this record replaces an earlier one
+**within the same scope**. The actual lifecycle transition (marking the older record
+as `shadowed`) is applied by `eidetic sweep`, not by `remember` itself. Cross-scope
+`supersedes` links are recorded but never auto-shadow (preserving the
+public/private no-leak invariant).
+
+To apply pending transitions after ingesting superseding records:
+
+```bash
+eidetic sweep --dry-run   # preview what would change
+eidetic sweep             # apply transitions
+```
 
 ## Flags (forwarded to `eidetic remember`)
 
