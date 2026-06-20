@@ -84,10 +84,24 @@ Read-only descriptive snapshot of the agent: identity (from `culture.yaml`), the
 verb surface, and the sibling-pattern artifacts the template carries. Accepts an
 ignored `target` so a stray path never hard-fails.
 
+## Store stats (opt-in)
+
+`--store` appends a live Store section: total records, a per-backend breakdown
+(files / mongo / graph), per-scope counts (name + visibility + lifecycle), and
+`link-connections` — the count of link/`supersedes` *references* summed across
+records, **not** graph edges (neo4j stores these as node properties). Narrow with
+`--backend {files,mongo,graph}` (one store; `graph` is neo4j) or `--scope NAME`
+(one scope); either flag implies `--store`. A backend that is down degrades to an
+`unavailable` line — `overview` still exits 0. Bare `overview` (no flags) never
+touches the store.
+
 ## Usage
 
     eidetic-cli overview
     eidetic-cli overview --json
+    eidetic-cli overview --store
+    eidetic-cli overview --store --backend mongo
+    eidetic-cli overview --scope qq --json
 """
 
 _DOCTOR = """\
