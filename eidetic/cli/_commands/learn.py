@@ -26,13 +26,25 @@ Commands
   eidetic-cli whoami             Identity from culture.yaml.
   eidetic-cli learn              This self-teaching prompt.
   eidetic-cli explain <path>...  Markdown docs for any noun/verb path.
-  eidetic-cli overview           Descriptive snapshot of the agent.
+  eidetic-cli overview           Descriptive snapshot of the agent + live store
+                                 stats (total records, per-backend, per-scope
+                                 counts, lifecycle breakdown, contributors).
   eidetic-cli doctor             Check the agent-identity invariants.
   eidetic-cli remember           Ingest memory records (JSON or NDJSON).
+                                 Auto-stamps added_by from the mesh nick;
+                                 override with --added-by <nick>.
   eidetic-cli recall             Search the memory store.
   eidetic-cli sweep              Apply lifecycle transitions (shadow/archive).
   eidetic-cli migrate qq         Import legacy QQ memory (files/mongo/neo4j).
   eidetic-cli cli overview       Describe the CLI surface itself.
+
+Record fields (selected)
+------------------------
+  added_by   Agent nick that ingested the record. Auto-stamped by `remember`
+             from the mesh identity (culture.yaml suffix); override with
+             --added-by <value> or embed in the JSON payload. Preserved
+             verbatim on recall. Used by `overview` to compute per-scope
+             contributor lists (union of added_by + metadata.author).
 
 Machine-readable output
 -----------------------
@@ -61,14 +73,34 @@ def _as_json_payload() -> dict[str, object]:
             {"path": ["whoami"], "summary": "Identity probe from culture.yaml."},
             {"path": ["learn"], "summary": "Self-teaching prompt."},
             {"path": ["explain"], "summary": "Markdown docs by path."},
-            {"path": ["overview"], "summary": "Descriptive snapshot of the agent."},
+            {
+                "path": ["overview"],
+                "summary": (
+                    "Descriptive snapshot of the agent + live store stats "
+                    "(per-backend, per-scope, lifecycle, contributors)."
+                ),
+            },
             {"path": ["doctor"], "summary": "Check the agent-identity invariants."},
-            {"path": ["remember"], "summary": "Ingest memory records (JSON or NDJSON)."},
+            {
+                "path": ["remember"],
+                "summary": (
+                    "Ingest memory records (JSON or NDJSON). "
+                    "Auto-stamps added_by from mesh nick; override with --added-by."
+                ),
+            },
             {"path": ["recall"], "summary": "Search the memory store."},
             {"path": ["sweep"], "summary": "Apply lifecycle transitions (shadow/archive)."},
             {"path": ["migrate", "qq"], "summary": "Import legacy QQ memory."},
             {"path": ["cli", "overview"], "summary": "Describe the CLI surface."},
         ],
+        "record_fields": {
+            "added_by": (
+                "Agent nick that ingested the record. Auto-stamped by `remember` "
+                "from the mesh identity (culture.yaml suffix); override with "
+                "--added-by <value> or embed in the JSON payload. "
+                "Used by `overview` to compute per-scope contributor lists."
+            ),
+        },
         "exit_codes": {
             "0": "success",
             "1": "user-input error",
