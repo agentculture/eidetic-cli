@@ -33,6 +33,7 @@ _VERBS = [
     "remember — ingest memory records (JSON or NDJSON)",
     "recall — search the memory store",
     "sweep — apply lifecycle transitions (shadow/archive) across the store",
+    "migrate qq — import legacy QQ memory (files/mongo/neo4j)",
 ]
 
 
