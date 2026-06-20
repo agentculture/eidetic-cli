@@ -119,6 +119,7 @@ def test_store_json_payload_shape(data_dir: str, capsys: pytest.CaptureFixture[s
                 "active": 1,
                 "shadowed": 0,
                 "archived": 0,
+                "contributors": [],
             }
         ],
         "connections": 3,
@@ -313,3 +314,76 @@ def test_close_is_called_on_probed_backend(data_dir: str, monkeypatch: pytest.Mo
     monkeypatch.setattr(ov, "get_backend", lambda name, **kw: _Closable())
     assert main(["overview", "--backend", "mongo"]) == 0
     assert closed == [True]
+
+
+# ---------------------------------------------------------------------------
+# t5: contributors per scope in render and JSON output
+# ---------------------------------------------------------------------------
+
+
+def _seed_with_author(
+    scope: Scope,
+    rid: str,
+    *,
+    added_by: str | None = None,
+    metadata_author: str | None = None,
+    **kw: object,
+) -> None:
+    meta: dict = {}
+    if metadata_author is not None:
+        meta["author"] = metadata_author
+    get_backend("files").upsert(
+        Record(
+            id=rid,
+            text=f"text-{rid}",
+            type="note",
+            hash="",
+            metadata=meta,
+            scope=scope,
+            added_by=added_by,
+            **kw,  # type: ignore[arg-type]
+        )
+    )
+
+
+def test_render_store_text_includes_contributors_line(
+    data_dir: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """render_store_text must emit a 'contributors:' line per scope."""
+    _seed_with_author(Scope("qq", "private"), "a", added_by="alice")
+    _seed_with_author(Scope("qq", "private"), "b", metadata_author="bob")
+
+    assert main(["overview", "--backend", "files"]) == 0
+    out = capsys.readouterr().out
+    assert "contributors:" in out
+    assert "alice" in out
+    assert "bob" in out
+
+
+def test_json_payload_carries_contributors_per_scope(
+    data_dir: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--json payload must include 'contributors' list on each scope dict."""
+    _seed_with_author(Scope("qq", "private"), "a", added_by="alice")
+    _seed_with_author(Scope("qq", "private"), "b", metadata_author="bob")
+
+    assert main(["overview", "--backend", "files", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    files = payload["store"]["backends"][0]
+    assert files["status"] == "live"
+    scope = files["scopes"][0]
+    assert "contributors" in scope
+    assert scope["contributors"] == ["alice", "bob"]
+
+
+def test_contributors_empty_when_no_authors(
+    data_dir: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scopes with no author info yield an empty contributors list."""
+    _seed(Scope("default", "public"), "a")
+
+    assert main(["overview", "--backend", "files", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    files = payload["store"]["backends"][0]
+    scope = files["scopes"][0]
+    assert scope["contributors"] == []
