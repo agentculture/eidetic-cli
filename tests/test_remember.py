@@ -261,3 +261,205 @@ def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
     lines = jsonl_files[0].read_text(encoding="utf-8").strip().splitlines()
     stored = _json.loads(lines[0])
     assert stored["score"] is None
+
+
+# --- t4 tests: created-date stamping + supersedes/links carrying ---
+
+
+def test_ingest_stamps_created_when_not_provided(tmp_data_dir: str) -> None:
+    """A record without 'created' gets stamped with the current ISO-8601 date."""
+    from datetime import datetime, timezone
+
+    record_json = json.dumps({"id": "cr1", "text": "no created date", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    before = datetime.now(timezone.utc).isoformat()
+    args.func(args)
+    after = datetime.now(timezone.utc).isoformat()
+
+    backend = get_backend("files")
+    results = backend.search(
+        "created", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "cr1"]
+    assert len(hit) == 1
+    record = hit[0]
+    # created should be a non-sentinel ISO string between before and after
+    assert record.created != "date-unknown"
+    assert before <= record.created <= after
+
+
+def test_ingest_preserves_provided_created(tmp_data_dir: str) -> None:
+    """A record with 'created' preserves the provided value verbatim."""
+    provided_date = "2025-01-15T10:30:00+00:00"
+    record_json = json.dumps(
+        {
+            "id": "cr2",
+            "text": "with created date",
+            "type": "note",
+            "created": provided_date,
+        }
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "created", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "cr2"]
+    assert len(hit) == 1
+    record = hit[0]
+    assert record.created == provided_date
+
+
+def test_ingest_carries_supersedes(tmp_data_dir: str) -> None:
+    """A record with 'supersedes' carries it through to storage."""
+    record_json = json.dumps(
+        {
+            "id": "sup1",
+            "text": "newer version",
+            "type": "note",
+            "supersedes": "old_id",
+        }
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "newer", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "sup1"]
+    assert len(hit) == 1
+    record = hit[0]
+    assert record.supersedes == "old_id"
+
+
+def test_ingest_carries_links(tmp_data_dir: str) -> None:
+    """A record with 'links' carries them through to storage."""
+    links = ["ref1", "ref2", "ref3"]
+    record_json = json.dumps(
+        {
+            "id": "lnk1",
+            "text": "linked record",
+            "type": "note",
+            "links": links,
+        }
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "linked", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "lnk1"]
+    assert len(hit) == 1
+    record = hit[0]
+    assert record.links == links
+
+
+def test_ingest_idempotent_with_created_and_supersedes_links(tmp_data_dir: str) -> None:
+    """Re-ingesting the same id stays idempotent even with created/supersedes/links."""
+    first_record = {
+        "id": "idp1",
+        "text": "original",
+        "type": "note",
+        "created": "2025-01-10T00:00:00+00:00",
+        "supersedes": "old1",
+        "links": ["ref1"],
+    }
+    args1 = _build_parser().parse_args(
+        [
+            "remember",
+            json.dumps(first_record),
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args1.func(args1)
+
+    # Ingest again with same id but different content
+    second_record = {
+        "id": "idp1",
+        "text": "updated",
+        "type": "note",
+        "created": "2025-01-20T00:00:00+00:00",
+        "supersedes": "old2",
+        "links": ["ref2", "ref3"],
+    }
+    args2 = _build_parser().parse_args(
+        [
+            "remember",
+            json.dumps(second_record),
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args2.func(args2)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "updated", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    ids = [r.id for r in results if r.id == "idp1"]
+    # Should have exactly one record with id='idp1', not a duplicate
+    assert ids.count("idp1") == 1
+    hit = [r for r in results if r.id == "idp1"][0]
+    # Should have the second record's values
+    assert hit.text == "updated"
+    assert hit.created == "2025-01-20T00:00:00+00:00"
+    assert hit.supersedes == "old2"
+    assert hit.links == ["ref2", "ref3"]
