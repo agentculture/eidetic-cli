@@ -664,3 +664,46 @@ def test_ingest_added_by_none_when_nick_unresolved_and_no_flag(
     hit = [r for r in results if r.id == "ab5"]
     assert len(hit) == 1
     assert hit[0].added_by is None
+
+
+def test_ingest_added_by_stamped_when_suffix_equals_fallback(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: when culture.yaml IS present and suffix == 'eidetic-cli', the nick
+    is stamped as-is — NOT treated as 'unresolved' and collapsed to None.
+
+    This guards the bug where `nick == _FALLBACK_NICK` caused the real configured
+    eidetic-cli agent to never attribute its own records (issue #8).
+    """
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "find_culture_yaml", lambda: Path("/fake/repo/culture.yaml"))
+    monkeypatch.setattr(
+        rem_mod,
+        "read_agent_fields",
+        lambda: {"nick": "eidetic-cli", "backend": "claude", "model": "unknown"},
+    )
+
+    record_json = json.dumps({"id": "ab6", "text": "suffix equals fallback", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "suffix", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab6"]
+    assert len(hit) == 1
+    # Must be "eidetic-cli", NOT None — the suffix IS the real identity here.
+    assert hit[0].added_by == "eidetic-cli"

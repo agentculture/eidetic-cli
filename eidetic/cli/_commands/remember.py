@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
-from eidetic.cli._commands.whoami import _FALLBACK_NICK, read_agent_fields
+from eidetic.cli._commands.whoami import find_culture_yaml, read_agent_fields
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
@@ -22,18 +22,17 @@ from eidetic.memory.scope import Scope
 
 
 def _resolve_nick() -> str | None:
-    """Return the agent nick from culture.yaml, or None if unresolved/fallback.
+    """Return the agent nick from culture.yaml, or None if culture.yaml is absent.
 
-    Returns None when culture.yaml is missing or the nick equals the module's
-    _FALLBACK_NICK sentinel (meaning no real identity is configured). This makes
-    the None-fallback reachable and testable via monkeypatching.
+    Returns None only when culture.yaml cannot be found (e.g. a wheel install
+    where no culture.yaml ships alongside the package). When culture.yaml IS
+    present, the suffix it declares — even if it happens to equal the module
+    default — is the agent's real configured mesh identity and is returned as-is.
     """
-    fields = read_agent_fields()
-    nick = fields.get("nick")
-    # Treat the fallback sentinel as "unresolved" so callers can distinguish
-    # a real configured nick from "nothing found"
-    if nick == _FALLBACK_NICK:
+    # No culture.yaml at all (e.g. wheel install) => no agent identity to stamp.
+    if find_culture_yaml() is None:
         return None
+    nick = read_agent_fields().get("nick")
     return nick or None
 
 
