@@ -529,6 +529,41 @@ def test_ingest_stamps_added_by_with_agent_nick(
     assert hit[0].added_by == "test-agent"
 
 
+def test_ingest_resolves_nick_once_per_batch(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bulk NDJSON ingest resolves the agent nick ONCE, not per record (Qodo PR #10).
+
+    The stamp value is constant across the batch, so culture.yaml must not be
+    re-read for every record.
+    """
+    import eidetic.cli._commands.remember as rem_mod
+
+    calls = {"n": 0}
+
+    def _counting_nick() -> str:
+        calls["n"] += 1
+        return "batch-agent"
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", _counting_nick)
+    lines = [json.dumps({"id": f"bn{i}", "text": f"record {i}", "type": "note"}) for i in range(3)]
+    monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(lines)))
+    args = _build_parser().parse_args(
+        ["remember", "--backend", "files", "--scope", "default", "--visibility", "public"]
+    )
+    assert args.func(args) == 0
+
+    # nick resolved exactly once for the whole 3-record batch
+    assert calls["n"] == 1
+    backend = get_backend("files")
+    results = backend.search(
+        "record", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    stamped = [r for r in results if r.id.startswith("bn")]
+    assert len(stamped) == 3
+    assert all(r.added_by == "batch-agent" for r in stamped)
+
+
 def test_ingest_preserves_explicit_added_by_in_json(
     tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

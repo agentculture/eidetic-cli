@@ -66,8 +66,31 @@ def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
     return inputs
 
 
-def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
-    """Validate *d* and construct a Record, using *args* for scope defaults."""
+def _resolve_stamp_added_by(args: argparse.Namespace) -> str | None:
+    """Compute the added_by value to stamp on records lacking one.
+
+    Resolution order: ``--added-by`` flag > agent nick (from culture.yaml) > None.
+    Constant for a given invocation, so callers resolve it ONCE and thread it
+    through the ingest loop rather than re-reading culture.yaml per record.
+    """
+    flag_value = getattr(args, "added_by", None)
+    return flag_value if flag_value is not None else _resolve_nick()
+
+
+_UNRESOLVED = object()
+
+
+def _record_from_input(
+    d: dict[str, Any],
+    args: argparse.Namespace,
+    stamp_added_by: Any = _UNRESOLVED,
+) -> Record:
+    """Validate *d* and construct a Record, using *args* for scope defaults.
+
+    *stamp_added_by* is the pre-resolved value to stamp when the record carries
+    no ``added_by`` (the batch path resolves it once and passes it in). When left
+    unset, it is resolved per call — preserving the standalone contract.
+    """
     missing = [k for k in ("id", "text", "type") if k not in d]
     if missing:
         raise CliError(
@@ -86,8 +109,9 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
     # Resolution order: --added-by flag > agent nick > None.
     # An explicit value in the record JSON is always preserved verbatim.
     if "added_by" not in d:
-        flag_value = getattr(args, "added_by", None)
-        d["added_by"] = flag_value if flag_value is not None else _resolve_nick()
+        if stamp_added_by is _UNRESOLVED:
+            stamp_added_by = _resolve_stamp_added_by(args)
+        d["added_by"] = stamp_added_by
 
     # t4: preserve supersedes and links from input
     # (from_dict and Record() both handle these via defaults)
@@ -128,9 +152,13 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
 def cmd_remember(args: argparse.Namespace) -> int:
     inputs = _collect_inputs(args)
     backend = get_backend(args.backend)
+    # Resolve the stamp value ONCE per invocation — it is constant across the
+    # batch, so re-reading culture.yaml per record on a bulk NDJSON ingest is
+    # avoidable filesystem overhead (Qodo PR #10).
+    stamp_added_by = _resolve_stamp_added_by(args)
     ids: list[str] = []
     for d in inputs:
-        record = _record_from_input(d, args)
+        record = _record_from_input(d, args, stamp_added_by)
         backend.upsert(record)
         ids.append(record.id)
 
