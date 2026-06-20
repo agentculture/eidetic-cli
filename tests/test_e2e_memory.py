@@ -201,3 +201,230 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
     private_hits = json.loads(result.stdout)
     private_ids = {h["id"] for h in private_hits}
     assert "claude-private-1" in private_ids, "private scoped recall must return the private record"
+
+
+# ==================================================================
+# Three-layer coherence + spec success-signal suite (t9)
+#
+# These assert the L1 (migrate) / L2 (freshness signal) / L3 (no-delete
+# lifecycle) layers form ONE coherent surface against the REAL CLI, and that
+# every spec success-signal is a runnable, passing check.  Behaviours below
+# were verified by hand against the current tree before being asserted.
+# ==================================================================
+
+
+def _recall_ids(proc: subprocess.CompletedProcess[str]) -> list[str]:
+    """Parse a ``recall --json`` result into the ordered list of hit ids."""
+    assert proc.returncode == 0, proc.stderr
+    return [h["id"] for h in json.loads(proc.stdout)]
+
+
+def test_migrated_record_recalls_with_provenance_and_signal(tmp_path: Path) -> None:
+    """L1->L2 coherence: a migrated QQ fact ranks immediately, carrying
+    provenance (full metadata), a date signature, and a freshness signal."""
+    data_dir = str(tmp_path / "memory")
+    qq = tmp_path / "core.md"
+    qq.write_text(
+        "# Core\n\n## Iceland geography\n\nReykjavik is the capital of Iceland.\n",
+        encoding="utf-8",
+    )
+
+    # One-shot import into the default private `qq` scope.
+    result = _cli(["migrate", "qq", "--file", str(qq), "--json"], data_dir=data_dir)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["counts"]["qq-files"] == 1
+    assert report["total"] >= 1
+
+    # The migrated fact is recallable in the qq/private scope, with provenance.
+    result = _cli(
+        [
+            "recall",
+            "Reykjavik Iceland",
+            "--mode",
+            "keyword",
+            "--scope",
+            "qq",
+            "--visibility",
+            "private",
+            "--json",
+        ],
+        data_dir=data_dir,
+    )
+    assert result.returncode == 0, result.stderr
+    hits = json.loads(result.stdout)
+    assert hits, "migrated topic must be recallable in its scope"
+    hit = hits[0]
+    # Provenance round-trips verbatim.
+    assert hit["metadata"]["source"] == "qq-files"
+    assert hit["metadata"]["section"] == "Iceland geography"
+    assert "path" in hit["metadata"]
+    # A date signature and a freshness signal ride along (ranks immediately).
+    assert hit["created"] and hit["created"] != "date-unknown"
+    assert isinstance(hit["signal"], (int, float))
+
+    # And the personal `qq` data never leaks into a public recall (no-leak).
+    public = _cli(
+        ["recall", "Reykjavik Iceland", "--mode", "keyword", "--json"],
+        data_dir=data_dir,
+    )
+    assert hit["id"] not in _recall_ids(public), "private qq record must not leak to public recall"
+
+
+def test_migrate_is_idempotent(tmp_path: Path) -> None:
+    """Re-running the migration upserts in place: the same id never duplicates."""
+    data_dir = str(tmp_path / "memory")
+    qq = tmp_path / "core.md"
+    qq.write_text("# Core\n\n## Norway facts\n\nOslo is the capital of Norway.\n", encoding="utf-8")
+
+    first = _cli(["migrate", "qq", "--file", str(qq), "--json"], data_dir=data_dir)
+    assert first.returncode == 0
+    second = _cli(["migrate", "qq", "--file", str(qq), "--json"], data_dir=data_dir)
+    assert second.returncode == 0
+
+    result = _cli(
+        [
+            "recall",
+            "Oslo Norway",
+            "--mode",
+            "keyword",
+            "--scope",
+            "qq",
+            "--visibility",
+            "private",
+            "--json",
+        ],
+        data_dir=data_dir,
+    )
+    ids = _recall_ids(result)
+    qq_ids = [i for i in ids if i.startswith("qq-file:")]
+    assert len(qq_ids) == 1, "re-migration must not duplicate the record"
+
+
+def test_fresh_fact_outranks_year_old_equal_match(tmp_path: Path) -> None:
+    """L2 ranking: with equal lexical match, the fresher fact ranks above the
+    year-old one because its freshness signal is higher."""
+    data_dir = str(tmp_path / "memory")
+    # Same structure, distinct trailing token (distinct hash -> both persist),
+    # both match the query equally.
+    fresh = json.dumps(
+        {"id": "fresh", "text": "helsinki is the capital of finland alpha", "type": "note"}
+    )
+    stale = json.dumps(
+        {
+            "id": "stale",
+            "text": "helsinki is the capital of finland beta",
+            "type": "note",
+            "created": "2025-05-01T00:00:00+00:00",  # ~> 1y before the 2026 run
+        }
+    )
+    assert _cli(["remember"], stdin=fresh, data_dir=data_dir).returncode == 0
+    assert _cli(["remember"], stdin=stale, data_dir=data_dir).returncode == 0
+
+    result = _cli(
+        ["recall", "helsinki capital finland", "--mode", "keyword", "--json"],
+        data_dir=data_dir,
+    )
+    assert result.returncode == 0, result.stderr
+    hits = json.loads(result.stdout)
+    by_id = {h["id"]: h for h in hits}
+    assert {"fresh", "stale"} <= set(by_id), "both equally-matching records must be present"
+    # The deterministic L2 guarantee: the fresh fact carries a stronger signal...
+    assert by_id["fresh"]["signal"] > by_id["stale"]["signal"]
+    # ...and therefore ranks ahead of the year-old one.
+    order = [h["id"] for h in hits]
+    assert order.index("fresh") < order.index("stale"), "fresh must outrank the year-old fact"
+
+
+def test_supersede_then_sweep_shadows_old_but_recoverable(tmp_path: Path) -> None:
+    """L3 (the signal L2 computes is what L3 acts on): an explicit supersedes
+    link shadows the older same-scope record on sweep; it drops from default
+    recall yet --include-shadowed still returns it (never deleted)."""
+    data_dir = str(tmp_path / "memory")
+    old = json.dumps({"id": "moon-old", "text": "the earth has one moon", "type": "fact"})
+    new = json.dumps(
+        {
+            "id": "moon-new",
+            "text": "the earth has exactly one natural moon named luna",
+            "type": "fact",
+            "supersedes": "moon-old",
+        }
+    )
+    assert _cli(["remember"], stdin=old, data_dir=data_dir).returncode == 0
+    assert _cli(["remember"], stdin=new, data_dir=data_dir).returncode == 0
+
+    sweep = _cli(["sweep", "--json"], data_dir=data_dir)
+    assert sweep.returncode == 0, sweep.stderr
+    report = json.loads(sweep.stdout)
+    assert report["shadowed"] >= 1
+    changed = {c["id"]: c["lifecycle"] for c in report["changed"]}
+    assert changed.get("moon-old") == "shadowed"
+
+    # Default recall hides the shadowed record but keeps its successor.
+    default_ids = _recall_ids(
+        _cli(["recall", "moon", "--mode", "keyword", "--json"], data_dir=data_dir)
+    )
+    assert "moon-old" not in default_ids
+    assert "moon-new" in default_ids
+
+    # The explicit flag still returns it — nothing was destroyed.
+    shadowed = _cli(
+        ["recall", "moon", "--mode", "keyword", "--include-shadowed", "--json"],
+        data_dir=data_dir,
+    )
+    by_id = {h["id"]: h for h in json.loads(shadowed.stdout)}
+    assert "moon-old" in by_id, "shadowed record must remain retrievable"
+    assert by_id["moon-old"]["lifecycle"] == "shadowed"
+
+
+def test_year_old_record_archived_but_recoverable(tmp_path: Path) -> None:
+    """L3 archival: a >1yr record is archived (not deleted) on sweep — gone from
+    default recall, returned under --include-archived, with a low signal that is
+    exactly what L3 thresholded on."""
+    data_dir = str(tmp_path / "memory")
+    ancient = json.dumps(
+        {
+            "id": "ancient",
+            "text": "the dinosaurs went extinct a very long time ago",
+            "type": "fact",
+            "created": "2024-01-01T00:00:00+00:00",
+        }
+    )
+    assert _cli(["remember"], stdin=ancient, data_dir=data_dir).returncode == 0
+
+    sweep = _cli(["sweep", "--json"], data_dir=data_dir)
+    assert sweep.returncode == 0, sweep.stderr
+    report = json.loads(sweep.stdout)
+    assert report["archived"] >= 1
+    changed = {c["id"]: c["lifecycle"] for c in report["changed"]}
+    assert changed.get("ancient") == "archived"
+
+    default_ids = _recall_ids(
+        _cli(["recall", "dinosaurs", "--mode", "keyword", "--json"], data_dir=data_dir)
+    )
+    assert "ancient" not in default_ids, "archived record must drop from default recall"
+
+    archived = _cli(
+        ["recall", "dinosaurs", "--mode", "keyword", "--include-archived", "--json"],
+        data_dir=data_dir,
+    )
+    by_id = {h["id"]: h for h in json.loads(archived.stdout)}
+    assert "ancient" in by_id, "archived record must remain retrievable"
+    assert by_id["ancient"]["lifecycle"] == "archived"
+    # The L2 signal is what L3 thresholds on: the archived fact's signal is weak.
+    assert by_id["ancient"]["signal"] < 0.5
+
+
+def test_recall_exposes_freshness_signal_distinct_from_score(tmp_path: Path) -> None:
+    """Observable after-state: recall surfaces a freshness signal alongside the
+    lexical score — the two are independent fields, both present on every hit."""
+    data_dir = str(tmp_path / "memory")
+    rec = json.dumps({"id": "sig-1", "text": "a fact about freshness signal", "type": "note"})
+    assert _cli(["remember"], stdin=rec, data_dir=data_dir).returncode == 0
+
+    result = _cli(["recall", "freshness signal", "--mode", "keyword", "--json"], data_dir=data_dir)
+    assert result.returncode == 0
+    hit = json.loads(result.stdout)[0]
+    assert isinstance(hit["score"], (int, float))
+    assert isinstance(hit["signal"], (int, float))
+    assert "signal" in hit and "score" in hit
