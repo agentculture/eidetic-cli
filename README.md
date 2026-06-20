@@ -34,9 +34,9 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `whoami` | Report this agent's nick, version, backend, and model from `culture.yaml`. |
 | `learn` | Print a structured self-teaching prompt. |
 | `explain <path>` | Markdown docs for any noun/verb path. |
-| `overview` | Read-only snapshot of the agent **plus** a live Store section covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope + lifecycle breakdown, and link-connections. Narrow with `--backend`/`--scope`. A down backend degrades to `unavailable` via a fast probe (never crashes). |
+| `overview` | Read-only snapshot of the agent **plus** a live Store section covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope + lifecycle breakdown, link-connections, and distinct contributors per scope (union of each record's `added_by` and `metadata.author`). Narrow with `--backend`/`--scope`. A down backend degrades to `unavailable` via a fast probe (never crashes). |
 | `doctor` | Check the agent-identity invariants (prompt-file-present, backend-consistency). |
-| `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; stamps `created` date; accepts `supersedes`/`links`; `--backend`/`--scope`/`--visibility`. |
+| `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; stamps `created` date; auto-stamps `added_by` (resolution: `--added-by` flag > `culture.yaml` mesh nick > `None`); accepts `supersedes`/`links`; `--backend`/`--scope`/`--visibility`. |
 | `recall <query>` | Search the store — top-k hits with text + full metadata + `score` + `signal`; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Lifecycle flags: `--include-shadowed`, `--include-archived` (both excluded by default). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. |
 | `sweep` | Apply lifecycle transitions (shadow/archive) across the whole store — never deletes, only flips `lifecycle`. Supports `--dry-run`. |
 | `migrate qq` | One-shot idempotent import of legacy QQ memory (core.md/notes.md, MongoDB, Neo4j) into a private scope. |
@@ -92,6 +92,37 @@ age_factor   = 1 / (1 + days_old * 0.01)
 staleness    = days_since_last_recall * 0.01
 signal       = clamp((0.5 - staleness + access_bonus) * age_factor, 0, 1)
 blended_score = score * (1 + 0.25 * (signal - 0.5))
+```
+
+## Attribution (`added_by`)
+
+Every record carries an `added_by` field that identifies the agent or caller that
+ingested it. `eidetic remember` auto-stamps the field when it is absent from the
+record JSON, using this resolution order:
+
+1. **`--added-by <value>`** — explicit override on the CLI flag.
+2. **`culture.yaml` mesh nick** — the `suffix` declared in the repo's
+   `culture.yaml`; this is the normal case when running inside a mesh agent.
+3. **`None`** — when no `culture.yaml` is present (e.g. a wheel install or a
+   bare subprocess call without a repo context).
+
+An explicit `added_by` value already present in the record JSON is always
+preserved verbatim — `remember` never overwrites a caller-supplied attribution.
+The field is `None` for legacy records that pre-date this feature.
+
+`eidetic overview` (and `overview --store --scope <name>`) reports distinct
+contributors per scope: the union of each record's `added_by` and any
+`metadata.author` value, deduplicated and sorted.
+
+```bash
+# Ingest as a named caller:
+eidetic remember --added-by my-agent '{"id":"r1","text":"hello","type":"note"}'
+
+# Override the mesh nick for a bulk import:
+echo '{"id":"r2","text":"world","type":"note"}' | eidetic remember --added-by importer
+
+# View contributors per scope:
+eidetic overview --scope default
 ```
 
 ## Lifecycle (no hard-delete)
