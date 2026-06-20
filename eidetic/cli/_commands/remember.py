@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from typing import Any
 
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
@@ -60,6 +61,14 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
         )
     # score is recall-only; never store a caller-supplied score
     d = {k: v for k, v in d.items() if k != "score"}
+
+    # t4: stamp created date if not provided by the caller
+    if "created" not in d:
+        d["created"] = datetime.now(timezone.utc).isoformat()
+
+    # t4: preserve supersedes and links from input
+    # (from_dict and Record() both handle these via defaults)
+
     if "scope" in d:
         sc = d["scope"]
         if not isinstance(sc, dict) or "name" not in sc or "visibility" not in sc:
@@ -78,6 +87,9 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
         hash=d.get("hash", ""),
         metadata=d.get("metadata", {}),
         scope=Scope(args.scope, args.visibility),
+        created=d.get("created"),
+        supersedes=d.get("supersedes"),
+        links=d.get("links", []),
     )
     record.score = None
     return record
