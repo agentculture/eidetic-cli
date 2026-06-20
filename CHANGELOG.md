@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-20
+
+### Added
+
+- migrate qq — one-shot, idempotent import of the legacy ~/.claude QQ memory (core.md/notes.md markdown, Mongo claude_notes, Neo4j claude-context graph) into eidetic as upserts carrying provenance + a date signature; a down Mongo/Neo4j is skipped with a warning, not fatal; defaults to a PRIVATE qq scope so personal data never leaks into public recall (L1)
+- Freshness signal — every record now carries created, last_recall, recall_count, related-memory links, and a deterministic signal strength (near-linear age-decay + passive recall reinforcement: every recall counts as validation, no cooldown); signal is query-time-recomputable and blends into all four recall ranking modes (L2)
+- sweep command + eidetic/memory/lifecycle.py — applies never-delete lifecycle transitions across the store: within-scope-only supersedes shadowing (explicit link authoritative; cross-scope never interacts, preserving the no-leak invariant) and archival when a record is older than ~1 year OR its signal falls below threshold; core/protected records are exempt; conflict suggestions are returned for confirmation, never auto-applied (L3)
+- recall --include-shadowed / --include-archived — default recall excludes shadowed and archived records; the flags return them (nothing is ever hard-deleted, everything stays recoverable)
+- Record schema extended (created, last_recall, recall_count, links, supersedes, lifecycle, signal) with back-compatible from_dict defaults so legacy records load unchanged
+- Backend.all() enumeration on the files/mongo/neo4j backends, powering the lifecycle sweep
+- Boundary/contract, shared-store, and three-layer-coherence e2e test suites covering the spec success-signals
+
+### Changed
+
+- remember now stamps a created date on ingest and accepts supersedes + related-memory links on each record
+- recall output now exposes the freshness signal alongside the lexical score, and recalling a record passively reinforces it (bumps last_recall + recall_count)
+- README.md and CLAUDE.md document the built memory surface (freshness signal, no-delete shadow/archive lifecycle, QQ migration); CLAUDE.md no longer states the memory surface is unbuilt
+
+### Fixed
+
+- Recall reinforcement no longer persists query-time fields: the bumped copy now clears score and signal before upsert, so the recall-output-only score never leaks into the store and mongo/neo4j skip redundant per-hit re-embedding (qodo review)
+- Neo4j backend now persists and reloads the temporal/lifecycle fields (created, last_recall, recall_count, links, supersedes, lifecycle); previously they were dropped on --backend neo4j so recall reinforcement and sweep could not round-trip there (qodo review)
+- Record.links is normalised to a list at construction, so JSON carrying "links": null (or a non-list) no longer crashes signal scoring's len(record.links) during recall/sweep (qodo review)
+
 ## [0.4.0] - 2026-06-19
 
 ### Added

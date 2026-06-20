@@ -212,6 +212,24 @@ def test_search_metadata_filters(backend: MongoBackend) -> None:
     assert "m2" not in ids
 
 
+def test_all_enumerates_every_record(backend: MongoBackend) -> None:
+    """all() returns every stored doc as a Record, ignoring scope visibility."""
+    backend.upsert(_make_record(rid="a1", text="alpha"))
+    backend.upsert(
+        _make_record(
+            rid="p1",
+            text="secret",
+            scope=Scope(name="personal", visibility="private"),
+        )
+    )
+    all_ids = {r.id for r in backend.all()}
+    assert all_ids == {"a1", "p1"}
+
+
+def test_all_empty_store_returns_empty_list(backend: MongoBackend) -> None:
+    assert backend.all() == []
+
+
 def test_build_returns_mongo_backend() -> None:
     """Module-level build() returns a MongoBackend instance."""
     from eidetic.memory.backends import mongo

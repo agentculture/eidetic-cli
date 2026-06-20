@@ -79,6 +79,13 @@ class FilesBackend:
             case_sensitive=case_sensitive,
         )
 
+    def all(self) -> list[Record]:
+        """Enumerate every stored record across all scope files (no filtering)."""
+        records: list[Record] = []
+        for path in sorted(self._base.glob("*.jsonl")):
+            records.extend(self._load(path))
+        return records
+
     # -- internal helpers ------------------------------------------------
 
     def _scope_file(self, scope: Scope) -> Path:

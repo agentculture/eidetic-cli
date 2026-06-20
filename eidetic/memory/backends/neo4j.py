@@ -9,7 +9,7 @@ from typing import Any
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import Backend
 from eidetic.memory.embed import EmbedClient
-from eidetic.memory.record import Record
+from eidetic.memory.record import DATE_UNKNOWN, Record
 from eidetic.memory.scope import Scope, can_serve
 from eidetic.memory.scoring import rank
 
@@ -51,7 +51,15 @@ class Neo4jBackend:
             "MERGE (m:Memory {id: $id}) "
             "SET m.text = $text, m.type = $type, m.hash = $hash, "
             "m.metadata = $metadata, m.scope_name = $scope_name, "
-            "m.scope_visibility = $scope_visibility, m.embedding = $embedding "
+            "m.scope_visibility = $scope_visibility, m.embedding = $embedding, "
+            # Temporal + lifecycle state — without these the freshness signal
+            # and sweep transitions cannot round-trip on this backend.  A null
+            # param clears the property, so last_recall/supersedes read back as
+            # None.  score/signal are deliberately NOT persisted (query-time
+            # only).
+            "m.created = $created, m.last_recall = $last_recall, "
+            "m.recall_count = $recall_count, m.links = $links, "
+            "m.supersedes = $supersedes, m.lifecycle = $lifecycle "
             "RETURN m.id"
         )
         params = {
@@ -63,6 +71,12 @@ class Neo4jBackend:
             "scope_name": record.scope.name,
             "scope_visibility": record.scope.visibility,
             "embedding": embedding,
+            "created": record.created,
+            "last_recall": record.last_recall,
+            "recall_count": record.recall_count,
+            "links": record.links,
+            "supersedes": record.supersedes,
+            "lifecycle": record.lifecycle,
         }
         self._run(query, params)
 
@@ -98,6 +112,11 @@ class Neo4jBackend:
             alpha=alpha,
             case_sensitive=case_sensitive,
         )
+
+    def all(self) -> list[Record]:
+        """Enumerate every Memory node as a Record (no scope filtering)."""
+        rows = self._run("MATCH (m:Memory) RETURN m", {})
+        return [self._node_to_record(row["m"]) for row in rows]
 
     # -- internal helpers ------------------------------------------------
 
@@ -157,6 +176,16 @@ class Neo4jBackend:
             hash=node.get("hash", ""),
             metadata=metadata,
             scope=scope,
+            # Temporal + lifecycle fields, with the same safe defaults as
+            # Record.from_dict() so legacy nodes (written before these existed)
+            # load cleanly.  `links` defaults to [] (Record.__post_init__ also
+            # guards against a None slipping through).
+            created=node.get("created", DATE_UNKNOWN),
+            last_recall=node.get("last_recall"),
+            recall_count=node.get("recall_count", 0),
+            links=node.get("links") or [],
+            supersedes=node.get("supersedes"),
+            lifecycle=node.get("lifecycle", "active"),
         )
 
     @staticmethod

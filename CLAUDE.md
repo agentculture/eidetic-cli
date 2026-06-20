@@ -6,25 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `eidetic-cli` is an **AgentCulture mesh agent**, scaffolded from
 `culture-agent-template`. Its declared domain is "Agent/CLI providing eidetic
-perfect-recall memory" — but **that memory functionality is not yet built**.
-What exists today is the scaffold: an agent-first introspection CLI (cited from
+perfect-recall memory" — and **that memory surface is built** (v0.3.0+).
+The scaffold provides an agent-first introspection CLI (cited from
 [teken](https://github.com/agentculture/teken)'s `afi-cli` `python-cli`
 reference), a mesh identity, the vendored guildmaster skill kit, and a
-build/CI/deploy baseline. New domain code is added as additional noun groups on
-top of this scaffold — it does not replace it.
+build/CI/deploy baseline. Memory verbs (`remember`, `recall`, `sweep`,
+`migrate`) are added as additional noun groups on top of this scaffold —
+they do not replace it.
 
 The runtime package declares `neo4j` and `pymongo` as required dependencies for its Neo4j and Mongo memory backends. Embeddings and rerank still go over HTTP (no dep), and the files backend stays dependency-light for private/local scopes. Consumers stay dependency-free because they call `eidetic` over a subprocess boundary — that subprocess-not-import shape is the whole reason this is a CLI.
 
-## Planned domain: the memory surface (not yet built)
+## Memory surface (built — v0.3.0+)
 
-The scaffold's reason to exist is a memory layer that doesn't exist yet. Two open
-issues are the source of truth for its contract — **read them before writing any
-`remember`/`recall` code**; the **Contract shapes** subsection below distills
-them into a written shape, but the issues stay authoritative (#3 calls its shape
-"negotiable", #1 calls its objects "proposed"):
+The memory surface is live. `remember`, `recall`, `sweep`, and `migrate` are
+all implemented and rubric-green. Two open issues remain the authoritative
+consumer contracts — **read them before changing the record schema or I/O
+format** (#3 calls its shape "negotiable", #1 calls its objects "proposed"):
 
 - **[#3] First consumer — `jetson-ai-lab-cli`.** A read-only Discord/docs agent
-  needs `eidetic remember` (ingest) and `eidetic recall "<query>"` (top-k
+  uses `eidetic remember` (ingest) and `eidetic recall "<query>"` (top-k
   semantic retrieval) across a CLI subprocess boundary: JSON in/out, plus a
   **batch NDJSON-on-stdin** ingest path for bulk re-index. **Provenance is
   mandatory** on recall — every hit returns its `text` + full `metadata`
@@ -39,24 +39,27 @@ them into a written shape, but the issues stay authoritative (#3 calls its shape
   stages on later runs. It does **not** discover, conjecture, decompose, or
   prove; it only remembers and retrieves.
 
-### Contract shapes (distilled from #1/#3 — proposed, not frozen)
+### Record schema
 
-The three deliverables on #1 — *object schema*, *ingest contract*, *retrieval
-contract* — are written out here so a future instance builds against a shape
-instead of re-deriving it from the issues each time. Treat field names as a
-starting contract to confirm with the consumer, not a frozen API.
+Every stored item is a record with a common envelope plus a typed `metadata`
+payload selected by `type`. The schema below is implemented and stable — field
+names match what the backends persist and what `recall --json` emits:
 
-**Memory objects.** Every stored item is a record with a common envelope plus a
-typed `metadata` payload selected by `type`:
-
-| Field      | Required?  | Notes                                                                   |
-|------------|------------|-------------------------------------------------------------------------|
-| `id`       | yes        | stable identity; the upsert key                                         |
-| `text`     | yes        | the chunk being remembered (Discord msg, doc section, paper summary, claim, …) |
-| `type`     | yes        | one of the object types below; selects the `metadata` shape             |
-| `hash`     | recommended | content hash for dedup/idempotency; derived from `text` when omitted   |
-| `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall                |
-| `score`    | recall-only | relevance, set by `recall`, never sent on ingest                       |
+| Field | Required? | Notes |
+|-------|-----------|-------|
+| `id` | yes | stable identity; the upsert key |
+| `text` | yes | the chunk being remembered |
+| `type` | yes | selects the `metadata` shape |
+| `hash` | recommended | content hash for dedup; derived from `text` when omitted |
+| `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall |
+| `created` | auto-stamped | ISO-8601 UTC; stamped by `remember` if absent; drives age decay |
+| `supersedes` | optional | id of an earlier same-scope record this one replaces; `sweep` auto-shadows the target |
+| `links` | optional | list of related-memory ids; reserved for corroboration scoring |
+| `last_recall` | system | ISO-8601; bumped by each `recall` hit (passive reinforcement) |
+| `recall_count` | system | integer; bumped by each `recall` hit |
+| `lifecycle` | system | `active` (default), `shadowed`, or `archived`; set by `sweep` |
+| `score` | recall-only | relevance, set by `recall`, never sent on ingest |
+| `signal` | recall-only | freshness strength in [0, 1]; computed at recall time, blends into ranking |
 
 Object `type`s and the `metadata`/relationships that distinguish them:
 
@@ -71,37 +74,96 @@ Object `type`s and the `metadata`/relationships that distinguish them:
   reusable across claims; each record carries producer provenance (which of
   arxivist/tensor/reduce/prove emitted it, on which run).
 
-**Ingest — `eidetic remember`.** Accepts **one record as a JSON object** or a
-**batch as NDJSON on stdin** (one record per line) for bulk re-index. Required
-on every record: `id`, `text`, `type` (`hash`/`metadata` recommended, `hash`
-derived from `text` when absent). **Idempotent upsert by `id`/`hash`** —
-re-ingesting the same record updates in place, never duplicates. Public data
-only; the consumer guarantees it and eidetic must not assume otherwise.
-Producers: the #3 consumer emits `discord`/`docs` records; the #1 pipeline
-stages each emit their own object `type`.
+### Ingest — `eidetic remember`
 
-**Retrieval — `eidetic recall "<query>" --top-k N --json`.** Input: a query
-string plus optional facet filters. Output: top-k records ranked by relevance,
-each returned with its `text` + **full `metadata`** + a `score` — **provenance
-is mandatory** (recall without metadata is unusable; the #3 consumer builds
-*cited* answers). Facet filters span both consumers: `source`, `channel`, time
-window (#3) and `paper`, `topic`, `claim`, `lemma`, `method`, `author`,
-downstream `task` (#1). An optional rerank pass (model-gear reranker) may live
-in eidetic or in the caller — undecided.
+Accepts **one record as a JSON object** or a **batch as NDJSON on stdin** (one
+record per line) for bulk re-index. Required on every record: `id`, `text`,
+`type` (`hash`/`metadata` recommended, `hash` derived from `text` when absent).
+**Idempotent upsert by `id`/`hash`** — re-ingesting the same record updates in
+place, never duplicates. `created` is auto-stamped if absent. `supersedes` and
+`links` are accepted in the record JSON and persisted as-is.
 
-**This is where the dependency story meets its first real test.** A memory layer
-needs embeddings + a store, and the deliberate decision (not a default to drift
-into) is *where* that weight lives: call `model-gear`'s OpenAI-compatible
-`/v1/embeddings` and reranker over HTTP — no extra dep — or
-lazy-import a vector store behind the CLI. Either way, keep the heavy deps behind
-eidetic's *process* boundary so consumers stay dependency-free; that
-subprocess-not-import shape is the whole reason this is a CLI. eidetic owns its
-own neo4j + mongo via `docker-compose.yml` (`docker compose up`); the
-store/cypher/embedding logic is adapted from the sibling
-`../autonomous-intelligence/data-refinery` (cite-don't-import), but eidetic is the
-memory layer itself — not reliant on data-refinery's running stack. Build memory as new noun groups (`remember`,
-`recall`, …) on top of the scaffold per the **Architecture** pattern below — and
-keep each one rubric-green (`overview`, `learn` entry, `explain` catalog).
+### Retrieval — `eidetic recall "<query>"`
+
+Input: a query string plus optional facet filters. Output: top-k records ranked
+by relevance, each returned with its `text` + **full `metadata`** + `score` +
+`signal` — **provenance is mandatory** (recall without metadata is unusable; the
+consumer in issue #3 builds *cited* answers). Freshness signal blends multiplicatively into
+ranking for records that carry real temporal data; undated/legacy records are not
+affected. Lifecycle filtering: `shadowed` and `archived` records are **excluded by
+default** — pass `--include-shadowed` / `--include-archived` to retrieve them.
+Each `recall` hit passively bumps `last_recall` and `recall_count` on the matched
+records (reinforcement).
+
+Facet filters span both consumers: `source`, `channel`, time window (#3) and
+`paper`, `topic`, `claim`, `lemma`, `method`, `author`, downstream `task` (#1).
+
+### Freshness signal
+
+`eidetic.memory.scoring.signal_strength(record, now)` computes a float in `[0, 1]`
+from the QQ near-linear model:
+
+```text
+access_bonus = min(0.5, recall_count * 0.05)
+age_factor   = 1 / (1 + days_since_creation * 0.01)   # decay-neutral when undated
+staleness    = days_since_last_recall * 0.01           # 0 when never recalled
+signal       = clamp((0.5 - staleness + access_bonus) * age_factor, 0, 1)
+```
+
+The blend into the lexical/vector score is multiplicative around the neutral
+midpoint (β = 0.25): `blended = score * (1 + 0.25 * (signal - 0.5))`. Neutral
+records (`created == DATE_UNKNOWN` AND `recall_count == 0` AND
+`last_recall is None`) bypass the blend entirely and are an exact no-op. Tunable
+module constants live in `eidetic/memory/scoring.py`.
+
+### Lifecycle — no hard-delete
+
+`eidetic sweep` applies transitions across the whole store and is the **only**
+command that writes `lifecycle` changes. The engine (`eidetic/memory/lifecycle.py`)
+is pure — no I/O, no clock reads, deterministic and testable.
+
+**Rules:**
+
+1. **Within-scope shadowing (authoritative).** If record A declares
+   `A.supersedes == B.id` and A and B share the SAME scope (name AND visibility),
+   B is marked `shadowed`. Cross-scope `supersedes` links are ignored — this
+   preserves the public/private no-leak invariant. Never auto-applied by
+   `remember`; only triggered by `sweep`.
+
+2. **Archival.** A record is marked `archived` when: (a) its age exceeds
+   `ARCHIVE_AGE_DAYS` (365 days; DATE_UNKNOWN dates are age-neutral — never
+   archived by age), OR (b) its signal falls below `ARCHIVE_SIGNAL_THRESHOLD`
+   (0.25).
+
+3. **Protected exemption.** Records with `metadata.protected` set to a truthy
+   value are exempt from all transitions — never shadowed, never archived.
+
+4. **Suggestions.** Same-scope records with identical normalised text are returned
+   as advisory conflict hints for human confirmation. Never auto-applied.
+
+`sweep --dry-run` reports what would change without writing anything.
+
+### QQ memory migration
+
+`eidetic migrate qq` performs a one-shot idempotent import of the legacy QQ
+memory stack (Claude's personal knowledge) into a private eidetic scope:
+
+- **Sources:** `~/.claude/skills/memory/references/core.md` + `notes.md` (one
+  record per `##` section), MongoDB `claude_notes` collection, Neo4j entities
+  tagged `knowledge_context="claude"`.
+- **Destination:** `--scope qq --visibility private` by default — personal data
+  is never served to a public recall.
+- **Idempotent:** stable per-source ids (`qq-file:<path>#<slug>`, `qq-mongo:<id>`,
+  `qq-neo4j:<id>`) make re-runs safe.
+- **Resilient:** a down Mongo or Neo4j is skipped with a warning; the run
+  completes using the remaining sources.
+
+The dependency story is settled: embeddings + rerank go over HTTP to
+`model-gear`'s OpenAI-compatible endpoint — no extra dep — and fall back to
+deterministic local lexical when offline. Heavy deps are behind eidetic's *process*
+boundary so consumers stay dependency-free. eidetic owns its own neo4j + mongo via
+`docker-compose.yml`; the store/cypher/embedding logic is adapted from the sibling
+`../autonomous-intelligence/data-refinery` (cite-don't-import).
 
 ## Commands
 

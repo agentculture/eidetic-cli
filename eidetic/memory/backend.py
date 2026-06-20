@@ -31,6 +31,16 @@ class Backend(Protocol):
         case_sensitive: bool = False,
     ) -> list[Record]: ...
 
+    def all(self) -> list[Record]:
+        """Enumerate every stored record across all scopes (no ranking/filtering).
+
+        Unlike :meth:`search`, this performs no scope-visibility filtering — it is
+        the maintenance/enumeration path (e.g. the ``sweep`` lifecycle pass) that
+        must see every record, public and private alike, to reason about it. It
+        never mutates the store.
+        """
+        ...
+
 
 def get_backend(name: str = DEFAULT_BACKEND) -> Backend:
     """Resolve a backend by name, raising :class:`CliError` on failure."""

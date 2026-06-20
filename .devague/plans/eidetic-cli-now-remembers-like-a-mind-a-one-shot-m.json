@@ -1,0 +1,313 @@
+{
+  "slug": "eidetic-cli-now-remembers-like-a-mind-a-one-shot-m",
+  "title": "eidetic-cli now remembers like a mind: a one-shot migration absorbs the entire old ~/.claude QQ memory (markdown notes, MongoDB RAG, Neo4j graph) into eidetic; every fact carries a dated, decaying signal that weakens with age but strengthens each time it is recalled-and-validated or corroborated by a newly remembered connected fact; and nothing is ever hard-deleted \u2014 a stronger conflicting fact shadows a weaker older one, and memories past a year archive themselves, everything still recoverable.",
+  "frame_slug": "eidetic-cli-now-remembers-like-a-mind-a-one-shot-m",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-20T01:01:37Z",
+  "updated": "2026-06-20T01:07:26Z",
+  "targets": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic-cli now remembers like a mind: a one-shot migration absorbs the entire old ~/.claude QQ memory (markdown notes, MongoDB RAG, Neo4j graph) into eidetic; every fact carries a dated, decaying signal that weakens with age but strengthens each time it is recalled, or corroborated by a newly remembered connected fact; and nothing is ever hard-deleted \u2014 a stronger conflicting fact shadows a weaker older one, and memories past a year archive themselves, everything still recoverable."
+    },
+    {
+      "id": "h1",
+      "kind": "honesty",
+      "text": "The three layers ship as one coherent surface, not three disconnected features: the L2 signal-strength scalar is exactly what L3 thresholds on for shadowing and archival, and L1-migrated records receive a date and signal so they participate in ranking immediately."
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "Every memory-using agent on this machine \u2014 all Claude Code sessions and all AgentCulture mesh/colleague backends \u2014 plus Ori as operator. Eidetic becomes their shared durable memory, replacing the per-agent ~/.claude QQ skill."
+    },
+    {
+      "id": "h5",
+      "kind": "honesty",
+      "text": "Every named audience consumes eidetic over the SAME subprocess/JSON boundary \u2014 Claude Code sessions, mesh/colleague backends, and Ori as operator \u2014 so one shared store serves all of them with no per-agent fork."
+    },
+    {
+      "id": "c3",
+      "kind": "after_state",
+      "text": "Agents recall from one shared eidetic store whose ranking reflects how fresh, reinforced, and corroborated each fact is; all old QQ knowledge is present; contradicted facts fade behind their successors instead of misleading; nothing is lost \u2014 archived or shadowed memory is still retrievable on demand."
+    },
+    {
+      "id": "h6",
+      "kind": "honesty",
+      "text": "The after-state is observable: a recall response exposes the freshness/reinforcement/corroboration signal (not just a lexical score), and archived/shadowed records are absent from default results yet returned under an explicit flag."
+    },
+    {
+      "id": "c4",
+      "kind": "before_state",
+      "text": "Today eidetic's store is empty and flat: records carry no date, no decay, no reinforcement, no conflict handling. The real knowledge lives in the old QQ skill (files + Mongo + Neo4j) which Claude loads but eidetic cannot see, and recall ranks purely on lexical or vector match, so a stale 2024 fact ranks equal to one verified today."
+    },
+    {
+      "id": "h7",
+      "kind": "honesty",
+      "text": "The before-state is literally true today: record.py carries no date/decay/reinforcement/conflict fields and the store does not contain the old QQ knowledge (verified: store empty, schema lacks the fields)."
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "Memory that never forgets and never reconciles rots: contradictions accumulate, stale facts mislead, and recency or provenance are invisible to ranking. A temporal signal makes recall trustworthy, and never-delete-but-shadow makes it safe to let memory evolve."
+    },
+    {
+      "id": "h8",
+      "kind": "honesty",
+      "text": "The harm is current and demonstrable on the migrated corpus: without a temporal signal a stale fact ranks equal to a verified-today one, and without shadowing a contradicted fact keeps surfacing."
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "Not an autonomous fact-extraction or summarisation agent (eidetic only remembers and retrieves; producers still author records); not a UI; does not change the subprocess/JSON contract or the public-data-only rule; never hard-deletes; the decay model is a transparent heuristic, not a learned ML relevance model."
+    },
+    {
+      "id": "h9",
+      "kind": "honesty",
+      "text": "Each non-goal is enforceable: no code path extracts or summarises autonomously, no UI ships, the subprocess/JSON contract and public-only rule are unchanged, and no destructive delete exists anywhere in the tree."
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "After migration, recalling a topic the old QQ skill knew returns the same facts with provenance; a freshly-validated fact outranks an equally-matching year-old one; remembering a higher-signal contradicting fact hides the old one from default recall while --include-shadowed still returns it; a record older than one year drops out of default recall while --include-archived returns it; no record is ever physically removed."
+    },
+    {
+      "id": "h10",
+      "kind": "honesty",
+      "text": "Each success signal is a runnable check: a migrated-topic recall returns the old facts with provenance; a fresh fact outranks an equal-match year-old one; a higher-signal contradiction hides the old one from default recall but --include-shadowed returns it; a >1yr record drops from default but --include-archived returns it."
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "L1 Migration: a one-shot importer ingests every old QQ store \u2014 core.md and notes.md, Mongo claude_notes (importance, access_count, last_accessed), and Neo4j claude-context entities and relationships (mention_count, last_seen, verified, source_history) \u2014 into eidetic as idempotent upserts, each carrying provenance and a date signature, preserving the graph relationships as record links."
+    },
+    {
+      "id": "h2",
+      "kind": "honesty",
+      "text": "Re-running the migration is idempotent (same id or hash updates in place, never duplicates) and a down backend skips its layer with a warning without aborting the whole run."
+    },
+    {
+      "id": "c9",
+      "kind": "requirement",
+      "text": "L2 Freshness: every record gains a date signature and a signal-strength scalar computed from age-decay plus recall reinforcement plus corroboration from linked facts; recall blends signal strength into the existing exact/keyword/approximate/hybrid ranking."
+    },
+    {
+      "id": "h3",
+      "kind": "honesty",
+      "text": "The decay-plus-reinforcement function is deterministic and recomputable at query time from stored fields (created date, last_accessed, access_count, validations, links), so ranking never depends on a mutable cached score that can silently drift."
+    },
+    {
+      "id": "c10",
+      "kind": "requirement",
+      "text": "L3 Lifecycle: no hard delete; a stronger-signal conflicting record shadows a weaker older one (hidden from default recall, still retrievable); records older than about one year are archived (excluded from default recall, still retrievable); core/protected records are exempt from decay and archival."
+    },
+    {
+      "id": "h4",
+      "kind": "honesty",
+      "text": "Shadowing and archival only ever hide records from DEFAULT recall; an explicit flag (--include-shadowed / --include-archived) always returns the full set, and no code path issues a destructive delete."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "summary": "L1 schema foundation (record.py): extend Record with created-date, last_recall + recall_count, related-memory links, a computed signal field, lifecycle status (active/shadowed/archived), and a supersedes link; serialisation round-trips and legacy records without the fields load with safe defaults.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "Record.to_dict/from_dict round-trip all new fields",
+        "a legacy record lacking the fields loads with defaults: date-unknown sentinel, neutral signal, empty links, lifecycle=active"
+      ],
+      "deps": [],
+      "covers": [
+        "c4",
+        "h7",
+        "h1"
+      ]
+    },
+    {
+      "id": "t2",
+      "summary": "L2 signal function (scoring.py): deterministic, query-time-recomputable signal strength = near-linear (base - staleness + access_bonus) * age_factor from stored fields, with tunable decay_rate and passive recall reinforcement; blend signal into all four ranking modes.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "signal(record, now) is pure and deterministic from created/last_recall/recall_count/links",
+        "an older record scores below an identical fresher one; decay_rate is a parameter; no mutable cached score is persisted"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c9",
+        "h3"
+      ]
+    },
+    {
+      "id": "t3",
+      "summary": "Recall surface (recall.py): add --include-shadowed and --include-archived (default excludes both), expose signal/freshness in recall output, and trigger passive reinforcement (bump last_recall + recall_count) on each hit.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "default recall omits shadowed and archived records; the two flags return them",
+        "recall JSON exposes signal alongside score; a fresh fact outranks an equal-lexical-match year-old one; recalling a record increments recall_count"
+      ],
+      "deps": [
+        "t2"
+      ],
+      "covers": [
+        "c3",
+        "h6",
+        "c7",
+        "h10",
+        "h4"
+      ]
+    },
+    {
+      "id": "t4",
+      "summary": "Remember/supersedes (remember.py): stamp a creation date on ingest, accept an explicit supersedes link and related-memory links, and carry them into the stored record.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "ingesting stamps created date when absent and persists supersedes + links; re-ingest by id stays idempotent"
+      ],
+      "deps": [
+        "t1"
+      ],
+      "covers": [
+        "c8"
+      ]
+    },
+    {
+      "id": "t5",
+      "summary": "L3 lifecycle engine (new memory/lifecycle.py + sweep command): within-scope hybrid conflict shadowing (explicit supersedes authoritative, assisted suggestions never auto-shadow), archival when age>1yr OR signal<threshold, core/protected exempt, never a hard delete.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "an explicit supersedes link shadows the older same-scope record; cross-scope never interacts",
+        "a record older than 1yr OR below signal threshold is marked archived not deleted; core/protected exempt; no destructive-delete path exists"
+      ],
+      "deps": [
+        "t2"
+      ],
+      "covers": [
+        "c10",
+        "h4"
+      ]
+    },
+    {
+      "id": "t6",
+      "summary": "L1 migration importer (new migrate noun group + memory/migrate_qq.py): ingest core.md/notes.md, Mongo claude_notes, and Neo4j claude-context graph as idempotent eidetic upserts with provenance + date signature (cascade last_accessed/last_seen -> mtime -> date-unknown), relationships as record links; a down backend is skipped with a warning.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "re-running the migration updates in place and never duplicates (idempotent by id/hash)",
+        "with Mongo or Neo4j down, that layer is skipped with a warning and the run completes; migrated records carry provenance + date signature"
+      ],
+      "deps": [
+        "t1",
+        "t4"
+      ],
+      "covers": [
+        "c8",
+        "h2",
+        "c5",
+        "h8"
+      ]
+    },
+    {
+      "id": "t7",
+      "summary": "Boundary/contract guard tests (tests/test_boundaries.py): assert no destructive delete exists, the subprocess/JSON contract and public-only rule are unchanged, and no autonomous extraction/summarisation or UI is added.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a test fails if any hard-delete path exists in the tree",
+        "tests assert the recall/remember JSON contract and public-only scope rule are unchanged"
+      ],
+      "deps": [
+        "t3",
+        "t5"
+      ],
+      "covers": [
+        "c6",
+        "h9"
+      ]
+    },
+    {
+      "id": "t8",
+      "summary": "Shared-store/audience integration test (tests/test_shared_store.py): prove one shared ~/.eidetic/memory store is served over the subprocess/JSON boundary to all agents with no per-agent fork.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a record remembered via one CLI invocation is recalled by a separate invocation from the same shared store; no per-agent store path is created"
+      ],
+      "deps": [
+        "t6"
+      ],
+      "covers": [
+        "c2",
+        "h5"
+      ]
+    },
+    {
+      "id": "t9",
+      "summary": "End-to-end coherence + success-signal suite (tests/test_e2e_memory.py): runnable checks that the three layers form one coherent surface \u2014 migrated records rank immediately, L2 signal is exactly what L3 thresholds on \u2014 and every spec success signal passes.",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a migrated-topic recall returns old facts with provenance",
+        "a higher-signal contradiction hides the old one from default recall but --include-shadowed returns it; a >1yr record drops from default but --include-archived returns it"
+      ],
+      "deps": [
+        "t3",
+        "t5",
+        "t6"
+      ],
+      "covers": [
+        "c1",
+        "h1",
+        "c7",
+        "h10"
+      ]
+    },
+    {
+      "id": "t10",
+      "summary": "Docs + skills surface update: refresh README.md and CLAUDE.md to describe the freshness signal, the no-delete/shadow/archive lifecycle, and the QQ migration verb (CLAUDE.md must stop saying the memory surface is unbuilt); update the first-party remember + recall skills to document --include-shadowed/--include-archived, supersedes/links on ingest, and signal in recall output; ensure the in-CLI learn/overview/explain catalogs list the new migrate and lifecycle/sweep verbs.",
+      "origin": "user",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "README.md and CLAUDE.md describe freshness + lifecycle + migration; CLAUDE.md no longer states the memory surface is not yet built",
+        "remember and recall skills document the new flags, supersedes/links, and signal-in-output",
+        "eidetic learn/overview/explain list the migrate and sweep verbs and teken cli doctor . --strict stays green"
+      ],
+      "deps": [
+        "t3",
+        "t5",
+        "t6"
+      ],
+      "covers": [
+        "c6",
+        "h9"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "text": "Link-corroboration boost: how much a newly remembered connected fact raises an older linked fact's signal, and whether it propagates across links, is undecided (frame v7). Ship signal with a tunable/placeholder corroboration term initially.",
+      "kind": "unknown_nonblocking",
+      "task_id": "t2"
+    },
+    {
+      "id": "r2",
+      "text": "How assisted conflict suggestions surface to the operator (output channel, confirmation UX) is undecided.",
+      "kind": "unknown_nonblocking",
+      "task_id": "t5"
+    },
+    {
+      "id": "r3",
+      "text": "Whether the old Mongo/Neo4j backends are reachable at migration time is environment-dependent; handled by skip-with-warning but may yield a partial import.",
+      "kind": "unknown_nonblocking",
+      "task_id": "t6"
+    }
+  ]
+}

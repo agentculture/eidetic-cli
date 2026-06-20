@@ -7,12 +7,15 @@ never a traceback.
 from __future__ import annotations
 
 import argparse
+import copy
+from datetime import datetime, timezone
 from typing import Any
 
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
 from eidetic.memory.scope import Scope
+from eidetic.memory.scoring import signal_strength
 
 
 def _parse_filters(raw: list[str] | None) -> dict[str, str] | None:
@@ -36,18 +39,53 @@ def _parse_filters(raw: list[str] | None) -> dict[str, str] | None:
     return result
 
 
+def _filter_lifecycle(
+    hits: list,
+    include_shadowed: bool,
+    include_archived: bool,
+) -> list:
+    """Remove shadowed/archived records unless the corresponding flag is set."""
+    result = []
+    for hit in hits:
+        lc = getattr(hit, "lifecycle", "active")
+        if lc == "shadowed" and not include_shadowed:
+            continue
+        if lc == "archived" and not include_archived:
+            continue
+        result.append(hit)
+    return result
+
+
 def cmd_recall(args: argparse.Namespace) -> int:
     filters = _parse_filters(getattr(args, "filters", None))
     scope = Scope(args.scope, args.visibility)
-    hits = get_backend(args.backend).search(
+    include_shadowed: bool = getattr(args, "include_shadowed", False)
+    include_archived: bool = getattr(args, "include_archived", False)
+
+    # Lifecycle filtering is applied BEFORE top-k so that top-k counts only
+    # visible records.  We fetch all candidates from the backend (passing a
+    # large sentinel for top_k would work, but better to fetch all and filter
+    # here explicitly).  The backend's top_k cap is lifted by passing the
+    # total record count via a very large number; the lifecycle filter then
+    # brings the candidate set down to what the caller is allowed to see, and
+    # we slice to args.top_k after.
+    #
+    # Implementation: pass top_k=2**31 so rank() never truncates, then we
+    # truncate after lifecycle filtering.
+    backend = get_backend(args.backend)
+    all_hits = backend.search(
         args.query,
-        args.top_k,
+        2**31,  # fetch all ranked results; we apply top_k after lifecycle filter
         scope,
         filters,
         args.mode,
         alpha=args.alpha,
         case_sensitive=args.case_sensitive,
     )
+
+    # Apply lifecycle filter BEFORE top-k truncation.
+    visible = _filter_lifecycle(all_hits, include_shadowed, include_archived)
+    hits = visible[: args.top_k]
 
     # Provenance check: every hit must carry a numeric score.
     for hit in hits:
@@ -58,6 +96,18 @@ def cmd_recall(args: argparse.Namespace) -> int:
                 remediation="this is a backend bug; report it",
             )
 
+    # Single 'now' for the whole call — used for signal computation and
+    # passive reinforcement timestamps.
+    now = datetime.now(timezone.utc)
+
+    # Set computed signal on each hit BEFORE serialising (for output).
+    # We set signal directly on the record objects; these are the objects we
+    # will emit.  We must NOT mutate recall_count / last_recall on the emitted
+    # objects (those must reflect pre-bump state), so we emit first, bump copies.
+    for hit in hits:
+        hit.signal = signal_strength(hit, now)
+
+    # Build output payload from the query-time (pre-bump) state.
     if getattr(args, "json", False):
         payload: list[dict[str, Any]] = [hit.to_dict() for hit in hits]
         emit_result(payload, json_mode=True)
@@ -69,6 +119,23 @@ def cmd_recall(args: argparse.Namespace) -> int:
                 lines.append(f"  {k}: {v}")
             out.append("\n".join(lines))
         emit_result("\n\n".join(out) if out else "(no results)", json_mode=False)
+
+    # Passive reinforcement: bump recall_count and last_recall on COPIES and
+    # persist via upsert.  We use copies so the already-emitted objects (above)
+    # are untouched — their recall_count / last_recall remain at the pre-bump
+    # values, keeping this call's emitted payload stable.
+    now_iso = now.isoformat()
+    for hit in hits:
+        bumped = copy.copy(hit)
+        bumped.recall_count = hit.recall_count + 1
+        bumped.last_recall = now_iso
+        # Query-time fields must never be persisted: `score` is recall-output
+        # only, and `signal` is recomputed on every recall.  Clear them on the
+        # copy so reinforcement writes back durable state only (and so the
+        # mongo/neo4j upsert path is not handed a stale score to store).
+        bumped.score = None
+        bumped.signal = None
+        backend.upsert(bumped)
 
     return 0
 
@@ -133,6 +200,20 @@ def register(sub: argparse._SubParsersAction) -> None:
         default=[],
         metavar="KEY=VALUE",
         help="Metadata facet filter (repeatable).",
+    )
+    p.add_argument(
+        "--include-shadowed",
+        action="store_true",
+        dest="include_shadowed",
+        default=False,
+        help="Include records with lifecycle='shadowed' in results (excluded by default).",
+    )
+    p.add_argument(
+        "--include-archived",
+        action="store_true",
+        dest="include_archived",
+        default=False,
+        help="Include records with lifecycle='archived' in results (excluded by default).",
     )
     p.add_argument(
         "--json",

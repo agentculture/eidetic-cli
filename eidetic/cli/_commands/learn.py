@@ -30,6 +30,8 @@ Commands
   eidetic-cli doctor             Check the agent-identity invariants.
   eidetic-cli remember           Ingest memory records (JSON or NDJSON).
   eidetic-cli recall             Search the memory store.
+  eidetic-cli sweep              Apply lifecycle transitions (shadow/archive).
+  eidetic-cli migrate qq         Import legacy QQ memory (files/mongo/neo4j).
   eidetic-cli cli overview       Describe the CLI surface itself.
 
 Machine-readable output
@@ -63,6 +65,8 @@ def _as_json_payload() -> dict[str, object]:
             {"path": ["doctor"], "summary": "Check the agent-identity invariants."},
             {"path": ["remember"], "summary": "Ingest memory records (JSON or NDJSON)."},
             {"path": ["recall"], "summary": "Search the memory store."},
+            {"path": ["sweep"], "summary": "Apply lifecycle transitions (shadow/archive)."},
+            {"path": ["migrate", "qq"], "summary": "Import legacy QQ memory."},
             {"path": ["cli", "overview"], "summary": "Describe the CLI surface."},
         ],
         "exit_codes": {

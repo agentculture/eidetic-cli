@@ -192,6 +192,95 @@ records marked private, preventing accidental private-to-public leaks.
 """
 
 
+_SWEEP = """\
+# eidetic-cli sweep
+
+Apply lifecycle transitions across the whole memory store. Loads every record,
+runs the pure lifecycle engine, and (unless `--dry-run`) upserts the records
+whose `lifecycle` changed. It never deletes — it only ever flips `lifecycle` to
+`shadowed` or `archived` and persists the record in place.
+
+## Rules
+
+- **Shadowing (authoritative, within-scope only).** If record A declares
+  `supersedes == B.id` and A and B share the SAME scope (name AND visibility),
+  B is marked `shadowed`. A `supersedes` link that crosses scopes never shadows,
+  preserving the public/private no-leak invariant.
+- **Archival (age OR signal).** A record is marked `archived` when it is older
+  than ~1 year (`created`; an unknown date is age-neutral) OR its freshness
+  signal falls below the archive threshold.
+- **Protected exemption.** A record whose `metadata.protected` is truthy is
+  never shadowed and never archived.
+- **Suggestions.** Likely same-scope conflicts (high text overlap) are RETURNED
+  for human confirmation only — never auto-applied.
+
+## Flags
+
+- `--backend` — memory backend to sweep: `files`, `neo4j`, or `mongo` (default:
+  `files`).
+- `--dry-run` — report transitions without writing any change.
+- `--json` — emit structured JSON output.
+"""
+
+
+_MIGRATE = """\
+# eidetic-cli migrate
+
+One-shot import of legacy memory sources into the eidetic store. Currently
+exposes a single target, `migrate qq`, which reads the three legacy "QQ" memory
+layers and upserts every mapped record idempotently.
+
+## migrate qq
+
+Reads the QQ markdown files (`core.md` / `notes.md`, one record per `##`
+section), the QQ MongoDB `claude_notes` collection, and the QQ Neo4j entities
+tagged `knowledge_context="claude"`. Each source is guarded: a down/absent
+Mongo or Neo4j is **skipped with a warning** (to stderr) and the run completes
+with the remaining sources.
+
+Stable per-source ids make re-runs idempotent (upsert by id, never duplicate):
+`qq-file:<path>#<section-slug>`, `qq-mongo:<note_id>`, `qq-neo4j:<entity_id>`.
+Provenance + a date signature ride along in `metadata` and `created`
+(file mtime / Mongo `last_accessed` / Neo4j `last_seen`, falling back to the
+decay-neutral date-unknown sentinel).
+
+### No-leak default
+
+QQ files/`core.md` hold PERSONAL data, so migration writes into a **private**
+scope by default (`--scope qq --visibility private`). Migrated personal
+knowledge therefore never surfaces in a public recall. Both flags are
+configurable.
+
+## Flags
+
+- `--file PATH` — QQ markdown source to read (repeatable; defaults to the known
+  `core.md`/`notes.md` paths).
+- `--backend` — destination backend: `files`, `neo4j`, `mongo` (default:
+  `files`).
+- `--scope` — destination scope name (default: `qq`).
+- `--visibility` — destination scope visibility: `public` or `private`
+  (default: `private`).
+- `--json` — emit the per-source migration report as JSON.
+
+## Exit codes
+
+- `0` success
+- `2` environment / setup error (backend unavailable)
+
+## Behavior
+
+Reports counts of `shadowed` and `archived` transitions plus any advisory
+conflict suggestions. With `--dry-run`, the same report is produced but nothing
+is persisted. No code path deletes a record.
+- `1` user-input error (missing migration target)
+
+## Usage
+
+    eidetic-cli migrate qq
+    eidetic-cli migrate qq --file core.md --file notes.md --json
+"""
+
+
 ENTRIES: dict[tuple[str, ...], str] = {
     (): _ROOT,
     ("eidetic-cli",): _ROOT,
@@ -208,4 +297,8 @@ ENTRIES: dict[tuple[str, ...], str] = {
     ("cli", "overview"): _CLI,
     ("remember",): _REMEMBER,
     ("recall",): _RECALL,
+    ("sweep",): _SWEEP,
+    # t6: one-shot QQ memory importer
+    ("migrate",): _MIGRATE,
+    ("migrate", "qq"): _MIGRATE,
 }

@@ -224,6 +224,29 @@ def test_search_drops_private_record_for_different_scope() -> None:
     assert "priv1" not in ids
 
 
+# -- all() enumeration ---------------------------------------------------
+
+
+def test_all_enumerates_every_record() -> None:
+    """all() maps every node to a Record, ignoring scope visibility."""
+    pub = _make_record(rid="a1", text="alpha")
+    priv = _make_record(
+        rid="p1",
+        text="secret",
+        scope=Scope(name="personal", visibility="private"),
+    )
+    driver = _fake_driver([_fake_node(pub), _fake_node(priv)])
+    backend = Neo4jBackend(driver=driver)
+    all_ids = {r.id for r in backend.all()}
+    assert all_ids == {"a1", "p1"}
+
+
+def test_all_empty_store_returns_empty_list() -> None:
+    driver = _fake_driver([])
+    backend = Neo4jBackend(driver=driver)
+    assert backend.all() == []
+
+
 # -- driver connection errors ------------------------------------------
 
 
@@ -273,3 +296,93 @@ def test_close_never_connected_is_noop() -> None:
     """A never-connected Neo4jBackend().close() is a no-op."""
     backend = Neo4jBackend()
     backend.close()  # should not raise
+
+
+# -- temporal / lifecycle field round-trip (qodo "Neo4j loses lifecycle state")
+
+
+def test_upsert_persists_temporal_lifecycle_fields() -> None:
+    """upsert writes created/last_recall/recall_count/links/supersedes/lifecycle
+    into the Cypher params, and never persists query-time score/signal."""
+    driver = _fake_driver([])
+    backend = Neo4jBackend(driver=driver)
+    rec = Record(
+        id="lc1",
+        text="lifecycle record",
+        type="note",
+        hash="",
+        metadata={},
+        scope=Scope(name="default", visibility="public"),
+        created="2026-01-01T00:00:00+00:00",
+        last_recall="2026-02-01T00:00:00+00:00",
+        recall_count=3,
+        links=["a", "b"],
+        supersedes="old1",
+        lifecycle="shadowed",
+    )
+    backend.upsert(rec)
+
+    call_args = driver.session.return_value.run.call_args
+    query, params = call_args[0][0], call_args[0][1]
+    assert params["created"] == "2026-01-01T00:00:00+00:00"
+    assert params["last_recall"] == "2026-02-01T00:00:00+00:00"
+    assert params["recall_count"] == 3
+    assert params["links"] == ["a", "b"]
+    assert params["supersedes"] == "old1"
+    assert params["lifecycle"] == "shadowed"
+    # query-time fields are recall-output-only — never persisted
+    assert "score" not in params
+    assert "signal" not in params
+    assert "m.lifecycle = $lifecycle" in query
+
+
+def test_node_to_record_round_trips_lifecycle_fields() -> None:
+    """A node carrying the lifecycle properties maps back onto the Record."""
+    node = {
+        "id": "lc2",
+        "text": "round trip",
+        "type": "note",
+        "hash": "h",
+        "metadata": "{}",
+        "scope_name": "default",
+        "scope_visibility": "public",
+        "embedding": [0.1, 0.2, 0.3],
+        "created": "2026-03-01T00:00:00+00:00",
+        "last_recall": "2026-03-05T00:00:00+00:00",
+        "recall_count": 7,
+        "links": ["x", "y"],
+        "supersedes": "p",
+        "lifecycle": "archived",
+    }
+    driver = _fake_driver([node])
+    backend = Neo4jBackend(driver=driver)
+    rec = backend.all()[0]
+    assert rec.created == "2026-03-01T00:00:00+00:00"
+    assert rec.last_recall == "2026-03-05T00:00:00+00:00"
+    assert rec.recall_count == 7
+    assert rec.links == ["x", "y"]
+    assert rec.supersedes == "p"
+    assert rec.lifecycle == "archived"
+
+
+def test_node_to_record_legacy_node_uses_defaults() -> None:
+    """A legacy node (written before lifecycle fields existed) loads with the
+    same safe defaults as Record.from_dict()."""
+    legacy = {
+        "id": "old",
+        "text": "legacy",
+        "type": "note",
+        "hash": "h",
+        "metadata": "{}",
+        "scope_name": "default",
+        "scope_visibility": "public",
+        "embedding": [0.1],
+    }
+    driver = _fake_driver([legacy])
+    backend = Neo4jBackend(driver=driver)
+    rec = backend.all()[0]
+    assert rec.recall_count == 0
+    assert rec.lifecycle == "active"
+    assert rec.links == []
+    assert rec.last_recall is None
+    assert rec.supersedes is None

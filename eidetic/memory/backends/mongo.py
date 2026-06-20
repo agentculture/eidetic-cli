@@ -97,6 +97,10 @@ class MongoBackend:
             case_sensitive=case_sensitive,
         )
 
+    def all(self) -> list[Record]:
+        """Enumerate every stored record (no scope filtering, no ranking)."""
+        return [Record.from_dict(doc) for doc in self._collection.find({})]
+
 
 def build() -> Backend:
     """Factory: return a default MongoBackend instance."""

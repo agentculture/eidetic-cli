@@ -5,21 +5,25 @@ description: >
   Search the shared eidetic memory store and get back ranked, provenanced
   records. Drives `eidetic recall` with four search modes — exact (verbatim
   substring), approximate (vector/semantic), keyword (BM25 lexical), and hybrid
-  (a weighted blend of vector+keyword, the default) — each hit carrying its text,
-  full metadata, and a relevance score. The store lives at ~/.eidetic/memory (a
-  home-dir path outside any git worktree), so Claude and the colleague backend
-  recall each other's memories from one shared store. Use when the user says
-  "recall", "what do we know about X", "search memory", "have we seen X before",
-  "look it up in memory", "eidetic recall", or before answering from scratch when
-  prior context may already be stored. Pairs with the sibling /remember skill.
+  (a weighted blend of vector+keyword, the default) — each hit carrying its
+  text, full metadata, a relevance `score`, and a freshness `signal`. Recall
+  passively reinforces matched records (bumps last_recall + recall_count).
+  Shadowed and archived records are excluded by default; use
+  --include-shadowed / --include-archived to retrieve them. The store lives at
+  ~/.eidetic/memory (a home-dir path outside any git worktree), so Claude and
+  the colleague backend recall each other's memories from one shared store. Use
+  when the user says "recall", "what do we know about X", "search memory",
+  "have we seen X before", "look it up in memory", "eidetic recall", or before
+  answering from scratch when prior context may already be stored. Pairs with
+  the sibling /remember skill.
 ---
 
 # recall — search the shared eidetic memory
 
 `recall` drives **`eidetic recall`**: given a query, it returns the top-k stored
 records ranked by relevance, each with its `text`, full `metadata` (provenance),
-and a numeric `score`. It is the read half of the memory surface; the write half
-is the sibling **/remember** skill.
+a numeric `score`, and a freshness `signal`. It is the read half of the memory
+surface; the write half is the sibling **/remember** skill.
 
 The point of a *shared* store is that memory is a **team faculty**, not a
 per-agent silo: a record Claude wrote is recallable by the colleague backend
@@ -49,6 +53,60 @@ vector catches paraphrases, keyword catches exact ids/quotes. When the embed
 server is unreachable, `hybrid` collapses to keyword-only (it never fuses
 meaningless offline-fallback cosine).
 
+## Output fields
+
+Each hit in `--json` output includes:
+
+| Field | Notes |
+|-------|-------|
+| `id` | stable record identity |
+| `text` | the stored chunk |
+| `type` | record type |
+| `metadata` | full provenance, round-tripped verbatim from ingest |
+| `score` | relevance score from the chosen search mode (freshness-blended) |
+| `signal` | freshness strength in [0, 1]; computed at recall time from age, recall frequency, and staleness |
+| `created` | ISO-8601 ingest date (may be DATE_UNKNOWN for legacy records) |
+| `last_recall` | ISO-8601 timestamp of the most recent recall hit (null if never recalled) |
+| `recall_count` | number of times this record has been recalled (passive reinforcement counter) |
+| `lifecycle` | `active`, `shadowed`, or `archived` |
+| `links` | list of related-memory ids |
+
+## Freshness signal
+
+Every `recall` hit carries a `signal` field (float in `[0, 1]`). The signal
+blends **multiplicatively** into the lexical/vector score so recently-created
+and frequently-recalled records surface ahead of stale ones. The formula:
+
+```
+access_bonus = min(0.5, recall_count * 0.05)
+age_factor   = 1 / (1 + days_since_creation * 0.01)
+staleness    = days_since_last_recall * 0.01
+signal       = clamp((0.5 - staleness + access_bonus) * age_factor, 0, 1)
+blended_score = score * (1 + 0.25 * (signal - 0.5))
+```
+
+Records with no temporal data (legacy, undated) are an exact no-op — the blend
+is skipped for them so pre-existing fixture scores are unchanged.
+
+Each `recall` call is also **passive reinforcement**: it bumps `last_recall` and
+`recall_count` on every matched record, so frequently-recalled memories organically
+gain signal strength over time.
+
+## Lifecycle flags
+
+By default, `recall` returns only `active` records. Use these flags to retrieve
+non-active records:
+
+- `--include-shadowed` — include records whose `lifecycle == "shadowed"` (records
+  superseded within their scope by a newer record). Shadowed records are preserved
+  and still searchable; they are just hidden from the default result set.
+- `--include-archived` — include records whose `lifecycle == "archived"` (records
+  older than ~1 year or below the signal threshold). Archived records are fully
+  preserved; the flag makes them retrievable again.
+
+Both flags can be combined. Neither affects ranking — shadowed/archived records
+compete on score/signal just like active ones when included.
+
 ## Common flags (forwarded to `eidetic recall`)
 
 - `--mode exact|approximate|keyword|hybrid` — default `hybrid`.
@@ -58,6 +116,8 @@ meaningless offline-fallback cosine).
 - `--filter KEY=VALUE` — metadata facet filter (repeatable): e.g. `--filter source=docs`.
 - `--scope NAME` / `--visibility public|private` — scope isolation (no private leak).
 - `--backend files|mongo|neo4j` — default `files` (the shared home-dir store).
+- `--include-shadowed` — include shadowed records in results (excluded by default).
+- `--include-archived` — include archived records in results (excluded by default).
 - `--json` — structured list to stdout (use this when an agent parses the result).
 
 ## Examples
@@ -72,6 +132,12 @@ bash .claude/skills/recall/scripts/recall.sh "Orin Nano" --mode exact
 # Keyword search, offline-safe, narrowed to a source:
 bash .claude/skills/recall/scripts/recall.sh "thermal throttle" --mode keyword \
     --filter source=discord --top-k 10
+
+# Retrieve a record that was recently shadowed (its superseding record is now active):
+bash .claude/skills/recall/scripts/recall.sh "old topic" --include-shadowed --json
+
+# Retrieve all records including archived (to audit stale memories):
+bash .claude/skills/recall/scripts/recall.sh "power" --include-archived --include-shadowed --json
 ```
 
 ## Notes
