@@ -53,6 +53,7 @@ names match what the backends persist and what `recall --json` emits:
 | `hash` | recommended | content hash for dedup; derived from `text` when omitted |
 | `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall |
 | `created` | auto-stamped | ISO-8601 UTC; stamped by `remember` if absent; drives age decay |
+| `added_by` | auto-stamped | agent or caller that ingested this record; stamped by `remember` if absent. Resolution order: explicit value in the record JSON or `--added-by` flag wins; else the agent's mesh nick (the `suffix` from `culture.yaml`); else `None` (e.g. wheel install with no `culture.yaml`). Never overwrites an explicit caller-supplied value. `None` for legacy records. |
 | `supersedes` | optional | id of an earlier same-scope record this one replaces; `sweep` auto-shadows the target |
 | `links` | optional | list of related-memory ids; reserved for corroboration scoring |
 | `last_recall` | system | ISO-8601; bumped by each `recall` hit (passive reinforcement) |
@@ -80,8 +81,12 @@ Accepts **one record as a JSON object** or a **batch as NDJSON on stdin** (one
 record per line) for bulk re-index. Required on every record: `id`, `text`,
 `type` (`hash`/`metadata` recommended, `hash` derived from `text` when absent).
 **Idempotent upsert by `id`/`hash`** — re-ingesting the same record updates in
-place, never duplicates. `created` is auto-stamped if absent. `supersedes` and
-`links` are accepted in the record JSON and persisted as-is.
+place, never duplicates. `created` is auto-stamped if absent. `added_by` is
+auto-stamped if absent: the `--added-by` flag overrides; otherwise the agent's
+mesh nick (from `culture.yaml`) is used; falling back to `None` in wheel installs
+without a `culture.yaml`. An explicit `added_by` value in the record JSON is
+always preserved verbatim. `supersedes` and `links` are accepted in the record
+JSON and persisted as-is.
 
 ### Retrieval — `eidetic recall "<query>"`
 
