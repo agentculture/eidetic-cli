@@ -47,3 +47,15 @@
 - store stats are opt-in: bare 'overview' stays static + never touches the store (preserving never-fail + the cli-noun reuse of agent_sections); 'overview --store' adds the live Store section. --backend/--scope imply --store.
 - the Store section probes all three backends by default and reports each as live-with-counts or unavailable-with-reason (connection status is first-class, per the operator's 'report if connected/live' note)
 - distinct-authors/'users' line is deferred to a follow-up issue (no first-class who-added field exists; author lives only in free-form metadata.author). The first cut omits it rather than implying a user model.
+
+## Amendment (post-export, Ori 2026-06-20)
+
+The opt-in decision above (`--store` gates the Store section; bare `overview`
+stays store-free) is **overridden**: bare `overview` now covers **all** stores'
+statistics + status by **default**. `--backend` / `--scope` become *narrowing*
+flags; the `--store` flag is dropped (redundant). Honesty conditions h7 and h9
+(bare overview byte-identical / never touches the store) no longer hold by
+design. To keep the now-always-on store probe from blocking on a down mongo/neo4j
+(its 5s server-selection timeout), backends accept an optional `timeout_ms` and
+the probe uses a short one (default 1000ms, `EIDETIC_STORE_PROBE_TIMEOUT_MS`).
+All other honesty conditions (h1–h6, h8, h10) still hold.

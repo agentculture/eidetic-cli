@@ -42,8 +42,15 @@ class Backend(Protocol):
         ...
 
 
-def get_backend(name: str = DEFAULT_BACKEND) -> Backend:
-    """Resolve a backend by name, raising :class:`CliError` on failure."""
+def get_backend(name: str = DEFAULT_BACKEND, **kwargs: object) -> Backend:
+    """Resolve a backend by name, raising :class:`CliError` on failure.
+
+    Extra ``kwargs`` are forwarded to the backend's ``build()`` factory. The only
+    one in use today is ``timeout_ms`` — the ``overview`` store-probe passes a
+    short connect timeout so a down mongo/neo4j fails fast instead of blocking on
+    the default 5s server-selection timeout. Backends that don't take it (files)
+    ignore it.
+    """
     if name not in _KNOWN_BACKENDS:
         raise CliError(
             code=EXIT_ENV_ERROR,
@@ -58,4 +65,4 @@ def get_backend(name: str = DEFAULT_BACKEND) -> Backend:
             message=f"failed to load backend {name!r}: {exc}",
             remediation=f"install the optional driver for the {name!r} backend",
         ) from exc
-    return module.build()  # type: ignore[no-any-return]
+    return module.build(**kwargs)  # type: ignore[no-any-return]

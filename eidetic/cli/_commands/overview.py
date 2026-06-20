@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 from typing import Any
 
 from eidetic.cli._commands.whoami import report
@@ -27,6 +28,20 @@ from eidetic.memory.stats import compute_stats
 # registry key stays "neo4j".
 _STORE_LABELS: tuple[str, ...] = ("files", "mongo", "graph")
 _LABEL_TO_BACKEND = {"files": "files", "mongo": "mongo", "graph": "neo4j"}
+
+# Default server-selection / connection timeout for the store probe. Short by
+# design: `overview` shows store status on every call, so a down mongo/neo4j must
+# fail fast rather than block on the backends' normal 5s timeout. Override with
+# EIDETIC_STORE_PROBE_TIMEOUT_MS (the test suite sets it very low).
+_DEFAULT_PROBE_TIMEOUT_MS = 1000
+
+
+def _probe_timeout_ms() -> int:
+    try:
+        return int(os.environ.get("EIDETIC_STORE_PROBE_TIMEOUT_MS", str(_DEFAULT_PROBE_TIMEOUT_MS)))
+    except ValueError:
+        return _DEFAULT_PROBE_TIMEOUT_MS
+
 
 _ARTIFACTS = [
     "culture.yaml + CLAUDE.md — mesh identity (suffix + backend)",
@@ -113,13 +128,13 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
     Never raises. A backend that is down — ``get_backend`` import failure, a
     wrapped :class:`CliError`, or an unwrapped driver exception (mongo's lazy
     ``find()`` raises ``ServerSelectionTimeoutError`` directly) — degrades to an
-    ``unavailable`` line with the reason. This is the whole reason ``--store`` is
-    safe to run against a partially-down store: one dead backend never blocks the
-    others and never breaks the exit-0 contract.
+    ``unavailable`` line with the reason. This is the whole reason the always-on
+    Store section is safe against a partially-down store: one dead backend never
+    blocks the others and never breaks overview's exit-0 contract.
     """
     backend = None
     try:
-        backend = get_backend(_LABEL_TO_BACKEND[label])
+        backend = get_backend(_LABEL_TO_BACKEND[label], timeout_ms=_probe_timeout_ms())
         records = backend.all()
         # Filtering + aggregation live INSIDE the try so a malformed record
         # (e.g. a None scope from a corrupt store) degrades to 'unavailable'
@@ -175,15 +190,13 @@ def cmd_overview(args: argparse.Namespace) -> int:
     json_mode = bool(getattr(args, "json", False))
     sections = agent_sections()
 
-    # Store stats are opt-in: --backend / --scope imply --store. Bare overview
-    # (and `cli overview`) never reaches the store, so it stays byte-identical and
-    # cannot fail on a down backend.
+    # The Store section is ALWAYS shown: bare `overview` covers all stores'
+    # statistics + status. --backend narrows to one store, --scope to one scope.
+    # A down backend degrades to 'unavailable' (fast-timeout probe), never a crash,
+    # so overview still exits 0. (`cli overview` uses cli_sections() and is
+    # unaffected — it describes the CLI surface, not the store.)
     backend = getattr(args, "backend", None)
     scope_filter = getattr(args, "scope", None)
-    if not (getattr(args, "store", False) or backend or scope_filter):
-        emit_overview("eidetic-cli", sections, json_mode=json_mode)
-        return 0
-
     store = store_payload(backend, scope_filter)
     if json_mode:
         emit_result(
@@ -199,7 +212,7 @@ def cmd_overview(args: argparse.Namespace) -> int:
 def register(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser(
         "overview",
-        help="Read-only descriptive snapshot of the agent (identity, verbs, artifacts).",
+        help="Read-only snapshot of the agent (identity, verbs, artifacts) + live store stats.",
     )
     p.add_argument(
         "target",
@@ -208,23 +221,16 @@ def register(sub: argparse._SubParsersAction) -> None:
         "stray path argument never hard-fails.",
     )
     p.add_argument(
-        "--store",
-        action="store_true",
-        help="Append a live Store section: per-backend record counts, per-scope "
-        "breakdown, and link-connections (counted link/supersedes references, not "
-        "graph edges). A down backend degrades to 'unavailable', never a crash.",
-    )
-    p.add_argument(
         "--backend",
         choices=list(_STORE_LABELS),
-        help="Restrict the Store section to one backend (implies --store). "
-        "'graph' is the neo4j store. Default: probe all three.",
+        help="Narrow the Store section to one backend ('graph' is the neo4j store). "
+        "Default: all three (files/mongo/graph).",
     )
     p.add_argument(
         "--scope",
         metavar="NAME",
-        help="Restrict Store counts to records whose scope name matches NAME "
-        "(implies --store). An unknown scope yields a zero-count section.",
+        help="Narrow Store counts to records whose scope name matches NAME. "
+        "An unknown scope yields a zero-count section.",
     )
     p.add_argument("--json", action="store_true", help="Emit structured JSON.")
     p.set_defaults(func=cmd_overview)

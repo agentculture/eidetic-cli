@@ -23,10 +23,14 @@ class MongoBackend:
         client: MongoClient | None = None,
         uri: str | None = None,
         db: str | None = None,
+        timeout_ms: int | None = None,
     ) -> None:
         self._client: MongoClient | None = client
         self._uri = uri or os.environ.get("EIDETIC_MONGO_URI") or "mongodb://localhost:27018"
         self._db_name = db or os.environ.get("EIDETIC_MONGO_DB") or "eidetic_memory"
+        # Server-selection timeout. Defaults to 5s for normal ingest/recall; the
+        # overview store-probe passes a short value so a down server fails fast.
+        self._timeout_ms = timeout_ms if timeout_ms is not None else 5000
         self._embed = EmbedClient()
 
     # -- lazy client ----------------------------------------------------
@@ -34,7 +38,7 @@ class MongoBackend:
     def _ensure_client(self) -> MongoClient:
         if self._client is None:
             try:
-                self._client = MongoClient(self._uri, serverSelectionTimeoutMS=5000)
+                self._client = MongoClient(self._uri, serverSelectionTimeoutMS=self._timeout_ms)
             except Exception as exc:
                 raise CliError(
                     code=EXIT_ENV_ERROR,
@@ -102,6 +106,10 @@ class MongoBackend:
         return [Record.from_dict(doc) for doc in self._collection.find({})]
 
 
-def build() -> Backend:
-    """Factory: return a default MongoBackend instance."""
-    return MongoBackend()
+def build(*, timeout_ms: int | None = None, **_kwargs: object) -> Backend:
+    """Factory: return a default MongoBackend instance.
+
+    ``timeout_ms`` (when given) sets a short server-selection timeout for the
+    overview store-probe; omitted for normal ingest/recall (defaults to 5s).
+    """
+    return MongoBackend(timeout_ms=timeout_ms)

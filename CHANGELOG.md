@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `overview --store` (opt-in): live store stats appended to overview — per-backend record counts (files/mongo/graph), per-scope name+visibility+lifecycle breakdown, and link-connections (counted link/supersedes references, not graph edges). Narrow with `--backend {files,mongo,graph}` or `--scope NAME` (either implies --store). A down backend degrades to an `unavailable` line and overview still exits 0; bare overview is unchanged and never touches the store. New pure aggregator `eidetic.memory.stats`.
+- `overview` now reports a live **Store** section on every call, covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope name+visibility+lifecycle breakdown, and link-connections (counted link/supersedes references, not graph edges). Narrow with `--backend {files,mongo,graph}` or `--scope NAME`. A down backend degrades to an `unavailable` line via a fast status probe (tunable via `EIDETIC_STORE_PROBE_TIMEOUT_MS`) and overview still exits 0. New pure aggregator `eidetic.memory.stats`; backends gained an optional `timeout_ms` for the probe path.
 
 ## [0.5.0] - 2026-06-20
 

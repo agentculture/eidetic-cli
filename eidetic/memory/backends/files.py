@@ -123,6 +123,11 @@ class FilesBackend:
         return True
 
 
-def build() -> Backend:
-    """Factory: return a default FilesBackend instance."""
+def build(**_kwargs: object) -> Backend:
+    """Factory: return a default FilesBackend instance.
+
+    Accepts and ignores ``**_kwargs`` (e.g. ``timeout_ms``) so the uniform
+    ``get_backend(name, timeout_ms=…)`` probe path works across all backends —
+    the files backend has no network timeout to apply.
+    """
     return FilesBackend()

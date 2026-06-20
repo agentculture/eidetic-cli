@@ -26,11 +26,15 @@ class Neo4jBackend:
         uri: str | None = None,
         user: str | None = None,
         password: str | None = None,
+        timeout_ms: int | None = None,
     ) -> None:
         self._driver = driver
         self._uri = uri
         self._user = user
         self._password = password
+        # Connection timeout. None uses the driver default (~30s); the overview
+        # store-probe passes a short value so a down/unreachable server fails fast.
+        self._timeout_ms = timeout_ms
         self._embed = EmbedClient()
 
     # -- resource cleanup ------------------------------------------------
@@ -134,11 +138,16 @@ class Neo4jBackend:
         uri = self._uri or os.environ.get("NEO4J_URI", _DEFAULT_URI)
         user = self._user or os.environ.get("NEO4J_USER", _DEFAULT_USER)
         password = self._password or os.environ.get("NEO4J_PASSWORD")
+        # A short connection_timeout (seconds) only when the probe asks for one;
+        # otherwise let the driver use its default.
+        opts: dict[str, Any] = {}
+        if self._timeout_ms is not None:
+            opts["connection_timeout"] = self._timeout_ms / 1000.0
         try:
             if password:
-                self._driver = neo4j.GraphDatabase.driver(uri, auth=(user, password))
+                self._driver = neo4j.GraphDatabase.driver(uri, auth=(user, password), **opts)
             else:
-                self._driver = neo4j.GraphDatabase.driver(uri)
+                self._driver = neo4j.GraphDatabase.driver(uri, **opts)
         except Exception as exc:
             raise CliError(
                 code=EXIT_ENV_ERROR,
@@ -196,6 +205,10 @@ class Neo4jBackend:
         return True
 
 
-def build() -> Backend:
-    """Factory: return a default Neo4jBackend instance."""
-    return Neo4jBackend()
+def build(*, timeout_ms: int | None = None, **_kwargs: object) -> Backend:
+    """Factory: return a default Neo4jBackend instance.
+
+    ``timeout_ms`` (when given) sets a short connection timeout for the overview
+    store-probe; omitted for normal ingest/recall (driver default).
+    """
+    return Neo4jBackend(timeout_ms=timeout_ms)

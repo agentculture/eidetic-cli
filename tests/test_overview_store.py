@@ -1,14 +1,14 @@
-"""Tests for `overview --store` — the live store-stats surface.
+"""Tests for the always-on `overview` Store section — live store stats.
 
-Covers the honesty conditions from the converged spec
-(docs/specs/2026-06-20-eidetic-overview-now-reports-live-store-numbers-re.md):
-bare overview stays store-free and byte-identical (h7/h9), counts come from
-backend.all() (h1/h3), --backend/--scope narrowing (h4), reachable-but-empty vs
+Per the converged spec (+ Ori's amendment: bare overview covers ALL stores by
+default, with --backend/--scope as narrowing flags): counts come from
+backend.all() (h1/h3), --backend/--scope narrow (h4), reachable-but-empty vs
 unavailable (h8), a down backend degrades to exit 0 (h5), and the connections
 figure counts link-references not edges (h6).
 
 Records are seeded directly through the files backend (not the `remember` CLI) to
-keep the store deterministic and independent of the ingest path.
+keep the store deterministic and independent of the ingest path. The conftest
+pins a low store-probe timeout so the suite stays fast.
 """
 
 from __future__ import annotations
@@ -40,25 +40,44 @@ def _seed(scope: Scope, rid: str, **kw: object) -> None:
     )
 
 
-# --- bare overview is untouched (h7/h9) -----------------------------------
+# --- bare overview covers ALL stores by default ---------------------------
 
 
-def test_bare_overview_has_no_store_section(
-    data_dir: str, capsys: pytest.CaptureFixture[str]
+def _patch_all_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    """files -> real; mongo/graph -> down. Deterministic regardless of host DBs."""
+    real = get_backend
+
+    def fake(name: str, **kw: object) -> object:
+        if name == "files":
+            return real("files", **kw)
+        raise CliError(code=EXIT_ENV_ERROR, message="connection refused", remediation="start it")
+
+    monkeypatch.setattr(ov, "get_backend", fake)
+
+
+def test_bare_overview_includes_all_stores(
+    data_dir: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    _patch_all_three(monkeypatch)
+    _seed(Scope("default", "public"), "a")
     assert main(["overview"]) == 0
     out = capsys.readouterr().out
-    assert "## Store" not in out
     assert "Identity" in out  # the existing content is still there
+    assert "## Store" in out  # ...plus the always-on store section
+    assert "files — live: 1 record(s)" in out
+    assert "mongo — unavailable" in out
+    assert "graph — unavailable" in out
 
 
-def test_bare_overview_json_has_no_store_key(
-    data_dir: str, capsys: pytest.CaptureFixture[str]
+def test_bare_overview_json_has_store_key(
+    data_dir: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    _patch_all_three(monkeypatch)
     assert main(["overview", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert "store" not in payload
     assert payload["subject"] == "eidetic-cli"
+    labels = [b["backend"] for b in payload["store"]["backends"]]
+    assert labels == ["files", "mongo", "graph"]
 
 
 # --- --store adds the section, counts come from the backend (h1/h3) -------
@@ -105,10 +124,13 @@ def test_store_json_payload_shape(data_dir: str, capsys: pytest.CaptureFixture[s
     }
 
 
-def test_backend_flag_implies_store(data_dir: str, capsys: pytest.CaptureFixture[str]) -> None:
-    # --backend (and --scope) imply --store: no explicit --store needed.
-    assert main(["overview", "--backend", "files"]) == 0
-    assert "## Store" in capsys.readouterr().out
+def test_backend_flag_narrows_to_one_store(
+    data_dir: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --backend narrows the always-on Store section to a single backend.
+    assert main(["overview", "--backend", "files", "--json"]) == 0
+    labels = [b["backend"] for b in json.loads(capsys.readouterr().out)["store"]["backends"]]
+    assert labels == ["files"]
 
 
 # --- narrowing by scope (h4) ----------------------------------------------
@@ -155,9 +177,9 @@ def test_down_backend_degrades_to_unavailable_exit0(
 ) -> None:
     real = get_backend
 
-    def fake(name: str) -> object:
+    def fake(name: str, **kw: object) -> object:
         if name == "files":
-            return real("files")
+            return real("files", **kw)
         raise CliError(
             code=EXIT_ENV_ERROR,
             message="failed to connect: connection refused",
@@ -165,7 +187,7 @@ def test_down_backend_degrades_to_unavailable_exit0(
         )
 
     monkeypatch.setattr(ov, "get_backend", fake)
-    assert main(["overview", "--store", "--json"]) == 0  # default probes all three
+    assert main(["overview", "--json"]) == 0  # bare overview probes all three
     backends = {b["backend"]: b for b in json.loads(capsys.readouterr().out)["store"]["backends"]}
     assert backends["files"]["status"] == "live"
     assert backends["mongo"]["status"] == "unavailable"
@@ -182,7 +204,7 @@ def test_unwrapped_driver_exception_is_swallowed(
         def all(self) -> list[Record]:
             raise RuntimeError("server selection timeout\nverbose second line")
 
-    monkeypatch.setattr(ov, "get_backend", lambda name: _Boom())
+    monkeypatch.setattr(ov, "get_backend", lambda name, **kw: _Boom())
     assert main(["overview", "--backend", "mongo", "--json"]) == 0
     backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
     assert backend["status"] == "unavailable"
@@ -203,7 +225,7 @@ def test_malformed_record_degrades_not_raises(
             bad.scope = None  # type: ignore[assignment]  # corrupt: trips compute_stats
             return [bad]
 
-    monkeypatch.setattr(ov, "get_backend", lambda name: _Corrupt())
+    monkeypatch.setattr(ov, "get_backend", lambda name, **kw: _Corrupt())
     assert main(["overview", "--backend", "mongo", "--json"]) == 0
     backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
     assert backend["status"] == "unavailable"
@@ -219,6 +241,6 @@ def test_close_is_called_on_probed_backend(data_dir: str, monkeypatch: pytest.Mo
         def close(self) -> None:
             closed.append(True)
 
-    monkeypatch.setattr(ov, "get_backend", lambda name: _Closable())
+    monkeypatch.setattr(ov, "get_backend", lambda name, **kw: _Closable())
     assert main(["overview", "--backend", "mongo"]) == 0
     assert closed == [True]
