@@ -13,11 +13,28 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from eidetic.cli._commands.whoami import _FALLBACK_NICK, read_agent_fields
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
 from eidetic.memory.backend import get_backend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
+
+
+def _resolve_nick() -> str | None:
+    """Return the agent nick from culture.yaml, or None if unresolved/fallback.
+
+    Returns None when culture.yaml is missing or the nick equals the module's
+    _FALLBACK_NICK sentinel (meaning no real identity is configured). This makes
+    the None-fallback reachable and testable via monkeypatching.
+    """
+    fields = read_agent_fields()
+    nick = fields.get("nick")
+    # Treat the fallback sentinel as "unresolved" so callers can distinguish
+    # a real configured nick from "nothing found"
+    if nick == _FALLBACK_NICK:
+        return None
+    return nick or None
 
 
 def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -66,6 +83,13 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
     if "created" not in d:
         d["created"] = datetime.now(timezone.utc).isoformat()
 
+    # t2: stamp added_by if not present in the record JSON.
+    # Resolution order: --added-by flag > agent nick > None.
+    # An explicit value in the record JSON is always preserved verbatim.
+    if "added_by" not in d:
+        flag_value = getattr(args, "added_by", None)
+        d["added_by"] = flag_value if flag_value is not None else _resolve_nick()
+
     # t4: preserve supersedes and links from input
     # (from_dict and Record() both handle these via defaults)
 
@@ -96,6 +120,7 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
         created=d.get("created"),
         supersedes=d.get("supersedes"),
         links=d.get("links", []),
+        added_by=d.get("added_by"),
     )
     record.score = None
     return record
@@ -144,6 +169,15 @@ def register(sub: argparse._SubParsersAction) -> None:
         choices=["public", "private"],
         default="public",
         help="Record visibility (default: public).",
+    )
+    p.add_argument(
+        "--added-by",
+        default=None,
+        dest="added_by",
+        help=(
+            "Override the agent identity stamped on ingested records. "
+            "Defaults to the agent's mesh nick; falls back to None."
+        ),
     )
     p.add_argument(
         "--json",

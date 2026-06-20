@@ -493,3 +493,174 @@ def test_ingest_idempotent_with_created_and_supersedes_links(tmp_data_dir: str) 
     assert hit.created == "2025-01-20T00:00:00+00:00"
     assert hit.supersedes == "old2"
     assert hit.links == ["ref2", "ref3"]
+
+
+# --- t2 tests: added_by stamping at ingest ---
+
+
+def test_ingest_stamps_added_by_with_agent_nick(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record without 'added_by' gets stamped with the agent nick from read_agent_fields."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "test-agent")
+    record_json = json.dumps({"id": "ab1", "text": "no added_by field", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "added_by", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab1"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "test-agent"
+
+
+def test_ingest_preserves_explicit_added_by_in_json(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record with 'added_by' present in the JSON has it preserved verbatim."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "some-agent")
+    record_json = json.dumps(
+        {"id": "ab2", "text": "explicit added_by", "type": "note", "added_by": "custom-author"}
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "added_by", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab2"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "custom-author"
+
+
+def test_ingest_added_by_flag_wins_over_nick(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--added-by flag value takes priority over the agent nick."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "nick-from-yaml")
+    record_json = json.dumps({"id": "ab3", "text": "flag wins", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+            "--added-by",
+            "explicit-flag-author",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "wins", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab3"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "explicit-flag-author"
+
+
+def test_ingest_added_by_flag_preserves_json_value(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If 'added_by' is explicit in the JSON, --added-by flag does NOT override it."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: "nick-from-yaml")
+    record_json = json.dumps(
+        {
+            "id": "ab4",
+            "text": "json added_by beats flag",
+            "type": "note",
+            "added_by": "json-author",
+        }
+    )
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+            "--added-by",
+            "flag-author",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "beats", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab4"]
+    assert len(hit) == 1
+    assert hit[0].added_by == "json-author"
+
+
+def test_ingest_added_by_none_when_nick_unresolved_and_no_flag(
+    tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When nick is unresolved (None) and no --added-by flag, added_by is None."""
+    import eidetic.cli._commands.remember as rem_mod
+
+    monkeypatch.setattr(rem_mod, "_resolve_nick", lambda: None)
+    record_json = json.dumps({"id": "ab5", "text": "no added_by resolved", "type": "note"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+            "--scope",
+            "default",
+            "--visibility",
+            "public",
+        ]
+    )
+    args.func(args)
+
+    backend = get_backend("files")
+    results = backend.search(
+        "resolved", top_k=10, scope=Scope(name="default", visibility="public"), filters=None
+    )
+    hit = [r for r in results if r.id == "ab5"]
+    assert len(hit) == 1
+    assert hit[0].added_by is None
