@@ -220,6 +220,11 @@ def render_store_text(payload: dict[str, Any]) -> str:
         for s in b["scopes"]:
             detail = ", ".join(f"{k} {s[k]}" for k in ("active", "shadowed", "archived") if s[k])
             lines.append(f"  - {s['name']}/{s['visibility']}: {s['total']} ({detail})")
+            contributors = s.get("contributors", [])
+            if contributors:
+                lines.append(f"    contributors: {', '.join(contributors)}")
+            else:
+                lines.append("    contributors: (none)")
     return "\n".join(lines)
 
 
