@@ -203,6 +203,39 @@ def test_contributors_none_and_empty_values_ignored() -> None:
     assert scope_entry["contributors"] == ["alice"]
 
 
+def test_contributors_non_string_author_does_not_crash() -> None:
+    """A non-string metadata.author must not crash the always-on overview.
+
+    Regression (colleague review, PR #10): the contributor set mixed added_by
+    (str) with metadata.author (arbitrary type); sorted() then raised TypeError
+    on mixed-type comparison. Non-string authors are out of contract and are
+    excluded; valid string contributors still surface.
+    """
+    pub = Scope(name="default", visibility="public")
+    records = [
+        Record(
+            id="a",
+            text="int author",
+            type="note",
+            hash="",
+            metadata={"author": 123},
+            scope=pub,
+            added_by="alice",
+        ),
+        Record(
+            id="b",
+            text="list author",
+            type="note",
+            hash="",
+            metadata={"author": ["x", "y"]},
+            scope=pub,
+            added_by=None,
+        ),
+    ]
+    stats = compute_stats(records)  # must not raise
+    assert stats["scopes"][0]["contributors"] == ["alice"]
+
+
 def test_contributors_distinct_per_scope() -> None:
     """Two scopes maintain independent contributor sets."""
     qq = Scope(name="qq", visibility="private")

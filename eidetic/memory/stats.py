@@ -46,7 +46,8 @@ def compute_stats(records: list[Record]) -> dict[str, Any]:
         {
           "total": <int>,
           "scopes": [
-            {"name", "visibility", "total", "active", "shadowed", "archived"},
+            {"name", "visibility", "total", "active", "shadowed", "archived",
+             "contributors"},  # contributors: sorted distinct added_by + metadata.author
             ...  # sorted by (name, visibility)
           ],
           "connections": <int>,  # summed link-references (not graph edges)
@@ -56,7 +57,7 @@ def compute_stats(records: list[Record]) -> dict[str, Any]:
     — a reachable-but-empty backend, distinct from an unreachable one (which the
     caller renders as ``unavailable`` and never reaches this function for).
     """
-    scopes: dict[tuple[str, str], dict[str, int]] = {}
+    scopes: dict[tuple[str, str], dict[str, Any]] = {}
     connections = 0
 
     for record in records:
@@ -67,8 +68,11 @@ def compute_stats(records: list[Record]) -> dict[str, Any]:
         bucket[lifecycle] += 1
         connections += link_references(record)
         # Collect contributors: union of added_by and metadata.get("author").
+        # Only non-empty strings enter the set — a malformed non-string author
+        # (out of the #3 consumer contract) must not crash the always-on overview
+        # when sorted() later compares mixed types.
         for contributor in (record.added_by, record.metadata.get("author")):
-            if contributor:
+            if isinstance(contributor, str) and contributor:
                 bucket["_contributors"].add(contributor)
 
     scope_list = [
