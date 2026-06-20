@@ -206,14 +206,14 @@ def register(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         dest="include_shadowed",
         default=False,
-        help=("Include records with lifecycle='shadowed' in results " "(excluded by default)."),
+        help="Include records with lifecycle='shadowed' in results (excluded by default).",
     )
     p.add_argument(
         "--include-archived",
         action="store_true",
         dest="include_archived",
         default=False,
-        help=("Include records with lifecycle='archived' in results " "(excluded by default)."),
+        help="Include records with lifecycle='archived' in results (excluded by default).",
     )
     p.add_argument(
         "--json",

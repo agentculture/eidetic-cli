@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Callable
 
 from eidetic.memory.record import DATE_UNKNOWN, Record
 from eidetic.memory.scope import Scope
@@ -155,6 +156,48 @@ def _conflict_suggestions(records: list[Record]) -> list[dict]:
     return suggestions
 
 
+def _apply_supersedes_shadowing(
+    records: list[Record],
+    by_id: dict[str, Record],
+    mark: Callable[[Record, str], None],
+) -> None:
+    """Rule 1: authoritative within-scope ``supersedes`` shadowing.
+
+    Marks each superseded same-scope, non-protected target ``shadowed``. A
+    dangling or cross-scope link is a no-op (the latter preserves the no-leak
+    invariant).
+    """
+    for rec in records:
+        if not rec.supersedes:
+            continue
+        target = by_id.get(rec.supersedes)
+        if target is None:
+            continue  # dangling link → no-op
+        if not _same_scope(rec.scope, target.scope):
+            continue  # cross-scope supersedes never shadows (no-leak)
+        if is_protected(target):
+            continue  # protected predecessors are never shadowed
+        mark(target, "shadowed")
+
+
+def _apply_archival(
+    records: list[Record],
+    now: str | datetime,
+    already_changed: set[str],
+    mark: Callable[[Record, str], None],
+) -> None:
+    """Rule 2: age/signal archival. Protected and already-shadowed records are
+    skipped; everything else past the age/signal threshold is marked
+    ``archived``."""
+    for rec in records:
+        if is_protected(rec):
+            continue
+        if rec.id in already_changed:
+            continue  # already shadowed this pass; don't also archive
+        if _archive_reason(rec, now) is not None:
+            mark(rec, "archived")
+
+
 def compute_transitions(records: list[Record], now: str | datetime) -> LifecycleResult:
     """Compute lifecycle transitions for *records* against *now* (PURE).
 
@@ -179,27 +222,8 @@ def compute_transitions(records: list[Record], now: str | datetime) -> Lifecycle
         seen_changed.add(record.id)
         changed.append(record)
 
-    # Rule 1: authoritative within-scope supersedes shadowing.
-    for rec in records:
-        if not rec.supersedes:
-            continue
-        target = by_id.get(rec.supersedes)
-        if target is None:
-            continue  # dangling link → no-op
-        if not _same_scope(rec.scope, target.scope):
-            continue  # cross-scope supersedes never shadows (no-leak)
-        if is_protected(target):
-            continue  # protected predecessors are never shadowed
-        _mark(target, "shadowed")
-
-    # Rule 2: age/signal archival (protected records exempt).
-    for rec in records:
-        if is_protected(rec):
-            continue
-        if rec.id in seen_changed:
-            continue  # already shadowed this pass; don't also archive
-        if _archive_reason(rec, now) is not None:
-            _mark(rec, "archived")
+    _apply_supersedes_shadowing(records, by_id, _mark)
+    _apply_archival(records, now, seen_changed, _mark)
 
     suggestions = _conflict_suggestions(records)
     return LifecycleResult(changed=changed, suggestions=suggestions)
