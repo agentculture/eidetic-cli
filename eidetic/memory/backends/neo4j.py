@@ -63,7 +63,8 @@ class Neo4jBackend:
             # only).
             "m.created = $created, m.last_recall = $last_recall, "
             "m.recall_count = $recall_count, m.links = $links, "
-            "m.supersedes = $supersedes, m.lifecycle = $lifecycle "
+            "m.supersedes = $supersedes, m.lifecycle = $lifecycle, "
+            "m.added_by = $added_by "
             "RETURN m.id"
         )
         params = {
@@ -81,6 +82,7 @@ class Neo4jBackend:
             "links": record.links,
             "supersedes": record.supersedes,
             "lifecycle": record.lifecycle,
+            "added_by": record.added_by,
         }
         self._run(query, params)
 
@@ -195,6 +197,8 @@ class Neo4jBackend:
             links=node.get("links") or [],
             supersedes=node.get("supersedes"),
             lifecycle=node.get("lifecycle", "active"),
+            # added_by: None for legacy nodes that predate this field.
+            added_by=node.get("added_by"),
         )
 
     @staticmethod

@@ -1,8 +1,10 @@
-"""Tests for eidetic.memory.backends.neo4j — Neo4jBackend (mocked)."""
+"""Tests for eidetic.memory.backends.neo4j — Neo4jBackend (mocked + live)."""
 
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +13,51 @@ from eidetic.cli._errors import CliError
 from eidetic.memory.backends.neo4j import Neo4jBackend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
+
+# ---------------------------------------------------------------------------
+# Live-neo4j fixture + skip guard
+# ---------------------------------------------------------------------------
+
+_NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+_NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+_NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")  # None means no-auth
+
+
+def _neo4j_reachable() -> bool:
+    """Return True iff a live Neo4j instance is reachable."""
+    try:
+        import neo4j
+
+        opts = {}
+        if _NEO4J_PASSWORD:
+            drv = neo4j.GraphDatabase.driver(
+                _NEO4J_URI, auth=(_NEO4J_USER, _NEO4J_PASSWORD), connection_timeout=2, **opts
+            )
+        else:
+            drv = neo4j.GraphDatabase.driver(_NEO4J_URI, connection_timeout=2)
+        drv.verify_connectivity()
+        drv.close()
+        return True
+    except Exception:
+        return False
+
+
+requires_live_neo4j = pytest.mark.skipif(
+    not _neo4j_reachable(),
+    reason="live Neo4j not reachable — skipping live round-trip tests",
+)
+
+
+@pytest.fixture()
+def live_neo4j_backend():
+    """Yield a real Neo4jBackend connected to the live store; clean up after."""
+    backend = Neo4jBackend(
+        uri=_NEO4J_URI,
+        user=_NEO4J_USER,
+        password=_NEO4J_PASSWORD,
+    )
+    yield backend
+    backend.close()
 
 
 def _make_record(
@@ -386,3 +433,61 @@ def test_node_to_record_legacy_node_uses_defaults() -> None:
     assert rec.links == []
     assert rec.last_recall is None
     assert rec.supersedes is None
+
+
+# -- live round-trip: added_by (t3) ----------------------------------------
+
+
+@requires_live_neo4j
+def test_live_upsert_roundtrips_added_by(live_neo4j_backend: Neo4jBackend) -> None:
+    """upsert() followed by reload returns added_by unchanged (live neo4j)."""
+    rid = f"test-added-by-{uuid.uuid4().hex}"
+    rec = Record(
+        id=rid,
+        text="round-trip added_by",
+        type="note",
+        hash="",
+        metadata={},
+        scope=Scope(name="test", visibility="public"),
+        added_by="agent:test-runner",
+    )
+    live_neo4j_backend.upsert(rec)
+
+    all_records = live_neo4j_backend.all()
+    match = next((r for r in all_records if r.id == rid), None)
+    assert match is not None, f"record {rid!r} not found after upsert"
+    assert match.added_by == "agent:test-runner"
+
+    # Cleanup: delete the test node
+    live_neo4j_backend._run("MATCH (m:Memory {id: $id}) DELETE m", {"id": rid})
+
+
+@requires_live_neo4j
+def test_live_node_without_added_by_loads_as_none(live_neo4j_backend: Neo4jBackend) -> None:
+    """A node written WITHOUT added_by loads as added_by is None (legacy compat)."""
+    rid = f"test-no-added-by-{uuid.uuid4().hex}"
+    # Write a node directly via Cypher WITHOUT the added_by property to
+    # simulate a legacy node that predates this field.
+    live_neo4j_backend._run(
+        "CREATE (m:Memory {id: $id, text: $text, type: $type, hash: $hash, "
+        "metadata: $metadata, scope_name: $scope_name, "
+        "scope_visibility: $scope_visibility, "
+        "recall_count: 0, lifecycle: 'active', links: []})",
+        {
+            "id": rid,
+            "text": "legacy node without added_by",
+            "type": "note",
+            "hash": "",
+            "metadata": "{}",
+            "scope_name": "test",
+            "scope_visibility": "public",
+        },
+    )
+
+    all_records = live_neo4j_backend.all()
+    match = next((r for r in all_records if r.id == rid), None)
+    assert match is not None, f"legacy node {rid!r} not found"
+    assert match.added_by is None
+
+    # Cleanup
+    live_neo4j_backend._run("MATCH (m:Memory {id: $id}) DELETE m", {"id": rid})
