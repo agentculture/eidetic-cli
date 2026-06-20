@@ -34,6 +34,11 @@ is load-bearing, even where guildmaster's upstream copy omits it.
 | `spec-to-plan` | `../guildmaster/.claude/skills/spec-to-plan/` | **devague** (re-broadcast via guildmaster) | spec→plan leg of the devague workflow chain. Verbatim (already carried `type: command`). | 2026-05-26 (guildmaster 0.6.0) |
 | `assign-to-workforce` | `../guildmaster/.claude/skills/assign-to-workforce/` | **devague** (re-broadcast via guildmaster) | plan→parallel-implementation leg of the devague workflow chain. Verbatim (already carried `type: command`). | 2026-05-26 (guildmaster 0.6.0) |
 | `ask-colleague` | `../colleague/.claude/skills/ask-colleague/` | **colleague** (renamed from convertible; vendored directly — guildmaster re-broadcast pending) | The first-party front door to the `colleague` CLI: hand a scoped task to a *different* engine/mind via `explore` / `review` / `write`, and grade a finished work item via `feedback` (the ROI loop). `explore`/`review` run isolated in a throwaway `git worktree`; `write` **previews by default** (throwaway worktree, no side effects) and refuses a dirty tree only when applying (`--apply` / `--pr`). Verbatim except one consumer-identifying clause in the Provenance paragraph (`colleague vendors from guildmaster` → `eidetic-cli vendors from guildmaster`); already carried `type: command`. Optional runtime dep: **`colleague`** on PATH. | 2026-06-06 (colleague 0.39.2, direct) |
+| `remember` | (first-party) | **eidetic-cli** | The write half of eidetic's own memory surface — wraps `eidetic remember` (one JSON record or NDJSON batch on stdin; idempotent upsert). Authored here, not vendored: eidetic owns its memory layer. Broadcast to the mesh via steward/guildmaster is for later, if other agents want it. Pairs with `recall`. | 2026-06-19 (origin) |
+| `recall` | (first-party) | **eidetic-cli** | The read half of eidetic's own memory surface — wraps `eidetic recall` with four search modes (exact / approximate / keyword / hybrid). Authored here. Written so the **colleague** backend can drive it too, sharing one `~/.eidetic/memory` store with Claude (memory as a team faculty). Pairs with `remember`. | 2026-06-19 (origin) |
+
+These two are the **inverse** of the vendored skills: eidetic-cli is their
+*origin*, not a consumer. They are not re-synced from anywhere — edit them here.
 
 ## Re-sync procedure
 

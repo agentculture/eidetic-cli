@@ -126,38 +126,38 @@ def test_search_returns_records_with_score() -> None:
     assert isinstance(r.score, float)
 
 
-def test_search_uses_stored_embedding() -> None:
-    """search uses the node's stored embedding for cosine score when present."""
+def test_search_embeds_at_query_time() -> None:
+    """approximate search embeds query + candidate text fresh via embed_detect.
+
+    Ranking recomputes embeddings at query time (one batch) rather than reading
+    the node's stored embedding, so vector dimensions always match and behaviour
+    is identical across backends.
+    """
     rec = _make_record(rid="e1", text="embedded record")
-    node = _fake_node(rec)
-    # The fake node already has an embedding; ensure search uses it
-    # rather than re-embedding. We verify by checking that the EmbedClient
-    # embed() is NOT called for scoring (only for the query).
-    driver = _fake_driver([node])
+    driver = _fake_driver([_fake_node(rec)])
     backend = Neo4jBackend(driver=driver)
 
-    # Patch the embed client to track calls
-    original_embed = backend._embed.embed
-    embed_calls: list[list[str]] = []
+    original = backend._embed.embed_detect
+    calls: list[list[str]] = []
 
-    def tracked_embed(texts: list[str]) -> list[list[float]]:
-        embed_calls.append(texts)
-        return original_embed(texts)
+    def tracked(texts: list[str]):  # type: ignore[no-untyped-def]
+        calls.append(texts)
+        return original(texts)
 
-    backend._embed.embed = tracked_embed
+    backend._embed.embed_detect = tracked  # type: ignore[method-assign]
 
     results = backend.search(
         "embedded",
         top_k=10,
         scope=Scope(name="default", visibility="public"),
         filters=None,
+        mode="approximate",
     )
 
     assert len(results) == 1
-    # Only the query embedding should be called (1 call), not re-embedding
-    # the record text (which would be a 2nd call).
-    assert len(embed_calls) == 1
-    assert embed_calls[0] == ["embedded"]
+    # One batch call embedding the query AND the candidate text together.
+    assert len(calls) == 1
+    assert calls[0] == ["embedded", "embedded record"]
 
 
 def test_search_respects_top_k() -> None:

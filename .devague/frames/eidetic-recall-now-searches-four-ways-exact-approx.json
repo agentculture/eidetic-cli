@@ -1,0 +1,232 @@
+{
+  "slug": "eidetic-recall-now-searches-four-ways-exact-approx",
+  "title": "eidetic recall now searches four ways \u2014 exact, approximate (vector), keyword (BM25), and hybrid (RRF fusion) \u2014 and a vendored memory skill lets both Claude and its colleague backend remember and recall against one shared store.",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-19T18:00:24Z",
+  "updated": "2026-06-19T18:06:53Z",
+  "claims": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic recall now searches four ways \u2014 exact, approximate (vector), keyword (BM25), and hybrid (RRF fusion) \u2014 and a vendored memory skill lets both Claude and its colleague backend remember and recall against one shared store.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h4",
+          "text": "Shipped CLI matches the announcement: eidetic recall --mode {exact,approximate,keyword,hybrid} exists AND a remember+recall skill pair ships.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "Agents driving eidetic over a CLI/subprocess boundary: Claude and its diverse colleague backend (the two in-house testers), plus the #3 jetson-ai-lab-cli and #1 research-pipeline consumers.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h5",
+          "text": "Both Claude and the colleague backend can drive the skills; the #3/#1 JSON-in/JSON-out consumer contract is unchanged.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c3",
+      "kind": "after_state",
+      "text": "recall picks the right matcher per query \u2014 verbatim/exact, semantic vector, keyword/BM25, or a hybrid fusion of vector+keyword \u2014 across all three backends; exact and keyword work with the embed server offline; and a shared memory skill lets Claude and colleague read each other's memories.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h6",
+          "text": "A live run shows each mode returning the expected hit ordering, and exact/keyword succeed with the embed server stopped.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c4",
+      "kind": "before_state",
+      "text": "recall does vector-cosine only; there is no exact, keyword, or hybrid mode, and no skill that lets the colleague backend remember/recall or share a store with Claude.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h7",
+          "text": "git history confirms recall did vector-cosine only before this change (no --mode, no remember/recall skill).",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "Different recall needs different matching: vector-only misses exact ids/quotes and keyword hits, and a per-agent memory is a silo \u2014 a shared skill turns memory into a team faculty a diverse mind can also use.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h8",
+          "text": "A query with an exact id/quote that vector-only ranks low is surfaced by exact/keyword/hybrid.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "Not a new storage engine, not a backend rewrite, not multi-machine sync: reuse the existing files/mongo/neo4j backends and the model-gear embed/rerank servers; add modes + a skill on top.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h9",
+          "text": "No storage engine is replaced: the diff touches scoring + CLI + skills only, not the Backend storage protocol or the compose services.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "recall --mode {exact,approximate,keyword,hybrid} returns scored, provenanced hits identically across all three backends; exact/keyword succeed with embeddings offline; and colleague \u2014 given only the memory skill + eidetic explain \u2014 recalls a record Claude remembered, with any friction logged as a usability finding.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h10",
+          "text": "All four modes pass tests on all three backends, exact/keyword pass offline, and colleague recalls a Claude-written record using only the skill.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "recall exposes --mode {exact,approximate,keyword,hybrid}: exact = verbatim text match, approximate = vector cosine (today's behaviour), keyword = BM25-style lexical, hybrid = Reciprocal-Rank-Fusion of approximate+keyword. Scoring lives in one shared module all three backends call.",
+      "origin": "llm",
+      "status": "rejected",
+      "honesty_conditions": [
+        {
+          "id": "h1",
+          "text": "All four modes return Records carrying a non-None score and honour scope.can_serve + metadata --filter identically on files, mongo, and neo4j.",
+          "status": "proposed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c9",
+      "kind": "requirement",
+      "text": "A vendored .claude/skills/memory skill drives eidetic remember/recall (all four modes) and is usable by BOTH Claude and the colleague backend against ONE shared store, so the two agents read each other's memories.",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h2",
+          "text": "colleague, given only the memory skill + eidetic explain/learn, can recall a record Claude remembered with zero source edits and no hand-holding; friction is a logged usability finding.",
+          "status": "confirmed"
+        },
+        {
+          "id": "h11",
+          "text": "colleague, given only the memory skill + eidetic explain/learn, recalls a record Claude remembered with zero source edits; friction is logged as a usability finding.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c10",
+      "kind": "assumption",
+      "text": "exact and keyword never call the embed server (pure lexical), so they work fully offline; hybrid detects the embedding offline-fallback and degrades to keyword-only ranking rather than fusing meaningless cosine scores.",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h3",
+          "text": "With the embed server unreachable, exact and keyword return correct results and hybrid still produces a useful keyword-driven ranking (no crash, no meaningless cosine).",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c11",
+      "kind": "decision",
+      "text": "Default recall mode (no --mode flag) is hybrid.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c12",
+      "kind": "decision",
+      "text": "--mode exact = case-insensitive verbatim substring of the query in record.text; a --case-sensitive flag tightens to exact case.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c13",
+      "kind": "decision",
+      "text": "--mode hybrid fuses by WEIGHTED ALPHA BLEND: min-max normalise the approximate(vector cosine) and keyword(BM25) score sets to [0,1], then final = alpha*vector + (1-alpha)*keyword, default alpha=0.5, tunable via --alpha. When embeddings are the offline hash-fallback, hybrid sets alpha=0 (keyword-only) so it never fuses meaningless cosine.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c14",
+      "kind": "decision",
+      "text": "Ship TWO skills \u2014 .claude/skills/remember and .claude/skills/recall \u2014 each wrapping the eidetic CLI portably; the shared store is the files backend at ~/.eidetic/memory (home dir, shared across git worktrees so Claude and the colleague backend read each other's memories).",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c15",
+      "kind": "requirement",
+      "text": "recall exposes --mode {exact,approximate,keyword,hybrid} (default hybrid): exact=case-insensitive substring, approximate=vector cosine (today's behaviour), keyword=BM25 lexical, hybrid=weighted alpha blend of approximate+keyword. All per-mode scoring lives in ONE shared module every backend calls.",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h12",
+          "text": "All four modes return Records with non-None score and honour scope.can_serve + metadata --filter identically across files/mongo/neo4j; the shared scorer is the only place per-mode logic lives.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    }
+  ],
+  "open_vagueness": []
+}

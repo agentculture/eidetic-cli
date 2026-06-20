@@ -9,9 +9,10 @@ from typing import Any
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import Backend
-from eidetic.memory.embed import EmbedClient, cosine
+from eidetic.memory.embed import EmbedClient
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope, can_serve
+from eidetic.memory.scoring import rank
 
 
 class FilesBackend:
@@ -54,9 +55,11 @@ class FilesBackend:
         top_k: int,
         scope: Scope,
         filters: dict | None,
+        mode: str = "hybrid",
+        *,
+        alpha: float = 0.5,
+        case_sensitive: bool = False,
     ) -> list[Record]:
-        query_emb = self._embed.embed([query])[0]
-
         candidates: list[Record] = []
         for path in self._base.glob("*.jsonl"):
             for record in self._load(path):
@@ -66,18 +69,15 @@ class FilesBackend:
                     continue
                 candidates.append(record)
 
-        scored: list[tuple[float, Record]] = []
-        for record in candidates:
-            record_emb = self._get_embedding(record)
-            score = cosine(query_emb, record_emb)
-            scored.append((score, record))
-
-        scored.sort(key=lambda t: t[0], reverse=True)
-        results: list[Record] = []
-        for score, record in scored[:top_k]:
-            record.score = score
-            results.append(record)
-        return results
+        return rank(
+            mode,
+            query,
+            candidates,
+            self._embed,
+            top_k,
+            alpha=alpha,
+            case_sensitive=case_sensitive,
+        )
 
     # -- internal helpers ------------------------------------------------
 
@@ -107,9 +107,6 @@ class FilesBackend:
         with open(path, "w", encoding="utf-8") as f:
             for r in records:
                 f.write(json.dumps(r.to_dict()) + "\n")
-
-    def _get_embedding(self, record: Record) -> list[float]:
-        return self._embed.embed([record.text])[0]
 
     @staticmethod
     def _matches_filters(record: Record, filters: dict[str, Any]) -> bool:

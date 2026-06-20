@@ -143,3 +143,50 @@ def test_recall_malformed_filter_raises_cli_error(data_dir: str, seeded: None) -
     with pytest.raises(CliError) as exc_info:
         args.func(args)
     assert exc_info.value.code == EXIT_USER_ERROR
+
+
+def test_recall_default_mode_is_hybrid() -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "anything"])
+    assert args.mode == "hybrid"
+    assert args.alpha == 0.5
+    assert args.case_sensitive is False
+
+
+def test_recall_exact_mode_matches_substring(data_dir: str, seeded: None, capsys) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "alpha record", "--mode", "exact", "--json"])
+    rc = args.func(args)
+    assert rc == 0
+    hits = json.loads(capsys.readouterr().out)
+    assert [h["id"] for h in hits] == ["a1"]
+
+
+def test_recall_keyword_mode_drops_non_matches(data_dir: str, seeded: None, capsys) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "alpha", "--mode", "keyword", "--json"])
+    rc = args.func(args)
+    assert rc == 0
+    hits = json.loads(capsys.readouterr().out)
+    # 'alpha' appears in a1's text only ("alpha record"); others have no overlap.
+    assert {h["id"] for h in hits} == {"a1"}
+    assert all(h["score"] > 0.0 for h in hits)
+
+
+def test_recall_hybrid_mode_returns_scored_hits(data_dir: str, seeded: None, capsys) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "record", "--mode", "hybrid", "--json"])
+    rc = args.func(args)
+    assert rc == 0
+    hits = json.loads(capsys.readouterr().out)
+    assert len(hits) > 0
+    for hit in hits:
+        assert hit["score"] is not None
+
+
+def test_recall_bad_alpha_raises_cli_error(data_dir: str, seeded: None) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["recall", "record", "--mode", "hybrid", "--alpha", "2.0"])
+    with pytest.raises(CliError) as exc_info:
+        args.func(args)
+    assert exc_info.value.code == EXIT_USER_ERROR

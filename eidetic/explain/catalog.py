@@ -137,10 +137,10 @@ argument, or NDJSON from stdin for bulk ingest. Each record is upserted
 
 ## Behavior
 
-Each record must contain `id` and `text` keys. When a positional JSON argument
-is given, it is parsed as a single record. When omitted, stdin is read as
-NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a record
-with the same `id` overwrites the previous value.
+Each record must contain `id`, `text`, and `type` keys. When a positional JSON
+argument is given, it is parsed as a single record. When omitted, stdin is read
+as NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a
+record with the same `id` overwrites the previous value.
 """
 
 _RECALL = """\
@@ -150,8 +150,25 @@ Search the memory store and return matching records. Returns top-k hits, each
 with text, full metadata, and a relevance score. Scope-aware: queries respect
 the configured scope and visibility, with no private-to-public leak.
 
+## Search modes (`--mode`, default `hybrid`)
+
+- `exact` — case-insensitive verbatim substring match (`--case-sensitive`
+  tightens it). Pure lexical; works with the embed server offline.
+- `approximate` — vector cosine (semantic) similarity. Needs the embed server.
+- `keyword` — BM25 lexical scoring; only records sharing a query term match.
+  Works offline.
+- `hybrid` — weighted alpha blend of min-max-normalised `approximate` +
+  `keyword`: `score = alpha*approximate + (1-alpha)*keyword`. When the embed
+  server is unreachable, `alpha` collapses to 0 (keyword-only) so hybrid never
+  fuses meaningless offline-fallback cosine.
+
 ## Flags
 
+- `--mode` — search mode: `exact`, `approximate`, `keyword`, `hybrid` (default:
+  `hybrid`).
+- `--alpha` — hybrid blend weight in `[0,1]` (default: `0.5`); only used by
+  `--mode hybrid`.
+- `--case-sensitive` — only used by `--mode exact`; require matching case.
 - `--top-k` — maximum number of results to return (default: 5).
 - `--filter KEY=VALUE` — metadata facet filter; repeatable.
 - `--backend` — storage backend to query: `files`, `neo4j`, or `mongo` (default:
@@ -164,14 +181,14 @@ the configured scope and visibility, with no private-to-public leak.
 ## Exit codes
 
 - `0` success
-- `1` user-input error (malformed filter, missing query)
+- `1` user-input error (malformed filter, missing query, bad `--mode`/`--alpha`)
 
 ## Behavior
 
 Returns up to `--top-k` hits sorted by relevance score. Each hit includes the
 record text, all metadata fields, and a numeric score. Scope is enforced at
-query time: a query with `--visibility public` never returns records marked
-private, preventing accidental private-to-public leaks.
+query time across every mode: a query with `--visibility public` never returns
+records marked private, preventing accidental private-to-public leaks.
 """
 
 

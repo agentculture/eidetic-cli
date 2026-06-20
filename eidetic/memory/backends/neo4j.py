@@ -8,9 +8,10 @@ from typing import Any
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import Backend
-from eidetic.memory.embed import EmbedClient, cosine
+from eidetic.memory.embed import EmbedClient
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope, can_serve
+from eidetic.memory.scoring import rank
 
 _DEFAULT_URI = "bolt://localhost:7687"
 _DEFAULT_USER = "neo4j"
@@ -71,9 +72,11 @@ class Neo4jBackend:
         top_k: int,
         scope: Scope,
         filters: dict | None,
+        mode: str = "hybrid",
+        *,
+        alpha: float = 0.5,
+        case_sensitive: bool = False,
     ) -> list[Record]:
-        query_emb = self._embed.embed([query])[0]
-
         rows = self._run("MATCH (m:Memory) RETURN m", {})
 
         candidates: list[Record] = []
@@ -84,15 +87,17 @@ class Neo4jBackend:
                 continue
             if filters and not self._matches_filters(record, filters):
                 continue
-            score = cosine(
-                query_emb,
-                node.get("embedding") or self._embed.embed([record.text])[0],
-            )
-            record.score = score
             candidates.append(record)
 
-        candidates.sort(key=lambda r: r.score if r.score is not None else 0.0, reverse=True)
-        return candidates[:top_k]
+        return rank(
+            mode,
+            query,
+            candidates,
+            self._embed,
+            top_k,
+            alpha=alpha,
+            case_sensitive=case_sensitive,
+        )
 
     # -- internal helpers ------------------------------------------------
 
