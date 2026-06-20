@@ -112,6 +112,30 @@ def _score_exact(
 # -- keyword (BM25) --------------------------------------------------------
 
 
+def _bm25_doc_score(
+    doc: list[str],
+    q_terms: list[str],
+    df: dict[str, int],
+    n: int,
+    avgdl: float,
+) -> float:
+    """BM25 score of one tokenised *doc* against *q_terms* (collection stats df/n/avgdl)."""
+    dl = len(doc)
+    norm_dl = dl / avgdl if avgdl else 0.0
+    tf: dict[str, int] = {}
+    for term in doc:
+        tf[term] = tf.get(term, 0) + 1
+    score = 0.0
+    for term in q_terms:
+        freq = tf.get(term, 0)
+        if freq == 0:
+            continue
+        idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
+        denom = freq + _BM25_K1 * (1 - _BM25_B + _BM25_B * norm_dl)
+        score += idf * (freq * (_BM25_K1 + 1)) / denom
+    return score
+
+
 def _bm25_scores(query: str, candidates: list[Record]) -> list[float]:
     """Return a BM25 score per candidate (parallel to *candidates*)."""
     docs = [_kw_tokenize(c.text) for c in candidates]
@@ -119,29 +143,14 @@ def _bm25_scores(query: str, candidates: list[Record]) -> list[float]:
     if n == 0:
         return []
     q_terms = _kw_tokenize(query)
-    avgdl = sum(len(d) for d in docs) / n if n else 0.0
+    avgdl = sum(len(d) for d in docs) / n
 
     df: dict[str, int] = {}
     for doc in docs:
         for term in set(doc):
             df[term] = df.get(term, 0) + 1
 
-    scores: list[float] = []
-    for doc in docs:
-        dl = len(doc)
-        tf: dict[str, int] = {}
-        for term in doc:
-            tf[term] = tf.get(term, 0) + 1
-        score = 0.0
-        for term in q_terms:
-            freq = tf.get(term, 0)
-            if freq == 0:
-                continue
-            idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
-            denom = freq + _BM25_K1 * (1 - _BM25_B + _BM25_B * (dl / avgdl if avgdl else 0.0))
-            score += idf * (freq * (_BM25_K1 + 1)) / denom
-        scores.append(score)
-    return scores
+    return [_bm25_doc_score(doc, q_terms, df, n, avgdl) for doc in docs]
 
 
 def _score_keyword(query: str, candidates: list[Record]) -> list[tuple[float, Record]]:

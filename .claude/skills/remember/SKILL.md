@@ -40,7 +40,7 @@ The wrapper resolves the CLI portably (installed `eidetic` on `PATH`, else
 |-------|-----------|-------|
 | `id` | yes | stable identity; the upsert key |
 | `text` | yes | the chunk being remembered |
-| `type` | recommended | e.g. `note`, `docs`, `discord`, a research object type |
+| `type` | yes | e.g. `note`, `docs`, `discord`, a research object type |
 | `hash` | optional | content hash for dedup; derived from `text` when omitted |
 | `metadata` | recommended | provenance + facets; **round-trips verbatim** on recall |
 

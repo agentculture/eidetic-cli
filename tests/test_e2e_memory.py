@@ -40,9 +40,9 @@ def test_batch_ingest_and_recall(tmp_path: Path) -> None:
     data_dir = str(tmp_path / "memory")
 
     records = [
-        {"id": "e2e-1", "text": "the quick brown fox jumps over the lazy dog"},
-        {"id": "e2e-2", "text": "the lazy dog sleeps under the brown fox"},
-        {"id": "e2e-3", "text": "a quick fox and a lazy dog share the same den"},
+        {"id": "e2e-1", "text": "the quick brown fox jumps over the lazy dog", "type": "note"},
+        {"id": "e2e-2", "text": "the lazy dog sleeps under the brown fox", "type": "note"},
+        {"id": "e2e-3", "text": "a quick fox and a lazy dog share the same den", "type": "note"},
     ]
     ndjson = "\n".join(json.dumps(r) for r in records)
 
@@ -76,7 +76,7 @@ def test_idempotent_reingest(tmp_path: Path) -> None:
     """Remember the same record id twice; recall must show exactly one hit."""
     data_dir = str(tmp_path / "memory")
 
-    record = json.dumps({"id": "idempotent-1", "text": "idempotent test record"})
+    record = json.dumps({"id": "idempotent-1", "text": "idempotent test record", "type": "note"})
 
     # First ingest
     result = _cli(["remember", "--json"], stdin=record, data_dir=data_dir)

@@ -34,7 +34,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def test_single_record_upsert(tmp_data_dir: str) -> None:
     """A single JSON-object arg upserts one record, retrievable via search."""
-    record_json = json.dumps({"id": "r1", "text": "hello world"})
+    record_json = json.dumps({"id": "r1", "text": "hello world", "type": "note"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -60,8 +60,8 @@ def test_single_record_upsert(tmp_data_dir: str) -> None:
 def test_ndjson_stdin_upserts_multiple(tmp_data_dir: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """NDJSON on stdin upserts multiple records."""
     lines = [
-        json.dumps({"id": "a1", "text": "first record"}),
-        json.dumps({"id": "a2", "text": "second record"}),
+        json.dumps({"id": "a1", "text": "first record", "type": "note"}),
+        json.dumps({"id": "a2", "text": "second record", "type": "note"}),
     ]
     monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(lines)))
     args = _build_parser().parse_args(
@@ -89,7 +89,7 @@ def test_ndjson_stdin_upserts_multiple(tmp_data_dir: str, monkeypatch: pytest.Mo
 
 def test_idempotent_upsert(tmp_data_dir: str) -> None:
     """Re-running remember with the same id leaves exactly one record."""
-    record_json = json.dumps({"id": "dup1", "text": "original"})
+    record_json = json.dumps({"id": "dup1", "text": "original", "type": "note"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -105,7 +105,7 @@ def test_idempotent_upsert(tmp_data_dir: str) -> None:
     args.func(args)
 
     # Upsert again with same id, different text
-    record_json2 = json.dumps({"id": "dup1", "text": "updated"})
+    record_json2 = json.dumps({"id": "dup1", "text": "updated", "type": "note"})
     args2 = _build_parser().parse_args(
         [
             "remember",
@@ -145,7 +145,7 @@ def test_bad_json_raises_cli_error(tmp_data_dir: str) -> None:
 
 def test_json_output(tmp_data_dir: str, capsys: pytest.CaptureFixture[str]) -> None:
     """--json emits structured JSON output."""
-    record_json = json.dumps({"id": "j1", "text": "json test"})
+    record_json = json.dumps({"id": "j1", "text": "json test", "type": "note"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -164,7 +164,7 @@ def test_json_output(tmp_data_dir: str, capsys: pytest.CaptureFixture[str]) -> N
 
 def test_missing_id_raises_cli_error(tmp_data_dir: str) -> None:
     """A record missing 'id' raises CliError."""
-    record_json = json.dumps({"text": "no id here"})
+    record_json = json.dumps({"text": "no id here", "type": "note"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -180,7 +180,7 @@ def test_missing_id_raises_cli_error(tmp_data_dir: str) -> None:
 
 def test_missing_text_raises_cli_error(tmp_data_dir: str) -> None:
     """A record missing 'text' raises CliError."""
-    record_json = json.dumps({"id": "x1"})
+    record_json = json.dumps({"id": "x1", "type": "note"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -194,9 +194,26 @@ def test_missing_text_raises_cli_error(tmp_data_dir: str) -> None:
     assert exc_info.value.code == EXIT_USER_ERROR
 
 
+def test_missing_type_raises_cli_error(tmp_data_dir: str) -> None:
+    """A record missing 'type' raises CliError (type is required on ingest)."""
+    record_json = json.dumps({"id": "x1", "text": "no type here"})
+    args = _build_parser().parse_args(
+        [
+            "remember",
+            record_json,
+            "--backend",
+            "files",
+        ]
+    )
+    with pytest.raises(CliError) as exc_info:
+        args.func(args)
+    assert exc_info.value.code == EXIT_USER_ERROR
+    assert "type" in exc_info.value.message
+
+
 def test_malformed_scope_raises_cli_error(tmp_data_dir: str) -> None:
     """A record with a string 'scope' (not a dict) raises CliError."""
-    record_json = json.dumps({"id": "x", "text": "t", "scope": "default"})
+    record_json = json.dumps({"id": "x", "text": "t", "type": "note", "scope": "default"})
     args = _build_parser().parse_args(
         [
             "remember",
@@ -212,7 +229,7 @@ def test_malformed_scope_raises_cli_error(tmp_data_dir: str) -> None:
 
 def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
     """A record JSON that includes 'score' results in a stored record with score=None."""
-    record_json = json.dumps({"id": "sc1", "text": "scored", "score": 0.9})
+    record_json = json.dumps({"id": "sc1", "text": "scored", "type": "note", "score": 0.9})
     args = _build_parser().parse_args(
         [
             "remember",

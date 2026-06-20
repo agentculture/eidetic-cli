@@ -19,6 +19,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - recall ranking now recomputes embeddings at query time (uniform across backends); mongo no longer silently drops records without a stored embedding
 - EmbedClient rerank reads relevance_score (vLLM/Jina/Cohere) with score fallback
 
+### Fixed
+
+- `remember` now requires `type` on every record (alongside `id` and `text`), matching the documented ingest contract; the skill docs/wrapper and `explain remember` no longer call `type` optional (qodo review)
+- `eidetic/memory/scoring.py` — extracted `_bm25_doc_score` from `_bm25_scores` to drop the per-document loop's cognitive complexity below threshold; ranking output is unchanged (SonarCloud S3776)
+
 ## [0.3.0] - 2026-06-19
 
 ### Added

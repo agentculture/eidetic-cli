@@ -137,10 +137,10 @@ argument, or NDJSON from stdin for bulk ingest. Each record is upserted
 
 ## Behavior
 
-Each record must contain `id` and `text` keys. When a positional JSON argument
-is given, it is parsed as a single record. When omitted, stdin is read as
-NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a record
-with the same `id` overwrites the previous value.
+Each record must contain `id`, `text`, and `type` keys. When a positional JSON
+argument is given, it is parsed as a single record. When omitted, stdin is read
+as NDJSON (one JSON object per line). Upsert is idempotent: re-submitting a
+record with the same `id` overwrites the previous value.
 """
 
 _RECALL = """\

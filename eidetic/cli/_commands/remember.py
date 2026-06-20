@@ -51,11 +51,12 @@ def _collect_inputs(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
     """Validate *d* and construct a Record, using *args* for scope defaults."""
-    if "id" not in d or "text" not in d:
+    missing = [k for k in ("id", "text", "type") if k not in d]
+    if missing:
         raise CliError(
             code=EXIT_USER_ERROR,
-            message="record missing required key 'id' or 'text'",
-            remediation="each record must have 'id' and 'text' keys",
+            message=f"record missing required key(s): {', '.join(missing)}",
+            remediation="each record must have 'id', 'text', and 'type' keys",
         )
     # score is recall-only; never store a caller-supplied score
     d = {k: v for k, v in d.items() if k != "score"}
@@ -73,7 +74,7 @@ def _record_from_input(d: dict[str, Any], args: argparse.Namespace) -> Record:
     record = Record(
         id=d["id"],
         text=d["text"],
-        type=d.get("type", "note"),
+        type=d["type"],
         hash=d.get("hash", ""),
         metadata=d.get("metadata", {}),
         scope=Scope(args.scope, args.visibility),

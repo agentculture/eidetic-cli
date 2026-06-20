@@ -58,8 +58,8 @@ Usage:
               [--scope NAME] [--visibility public|private]
   cat records.ndjson | remember.sh [--json] ...
 
-A record needs at least `id` and `text`; `type`, `hash`, and `metadata` are
-recommended (hash is derived from text when omitted). Upsert is idempotent by id.
+A record needs `id`, `text`, and `type`; `hash` and `metadata` are recommended
+(hash is derived from text when omitted). Upsert is idempotent by id.
 Public data only. Every flag is forwarded verbatim to `eidetic remember`.
 See `eidetic explain remember`.
 EOF
