@@ -61,6 +61,12 @@ class Record:
     # computed sentinel — an absent signal must not bias ranking.
     signal: float | None = None
 
+    # Attribution: the agent or caller that ingested this record.  Set by
+    # `remember` at ingest time; None for legacy records that pre-date this
+    # field.  Later tasks (t2+) stamp and persist this value; this field is
+    # the envelope declaration only.
+    added_by: str | None = None
+
     def __post_init__(self) -> None:
         if not self.hash:
             object.__setattr__(self, "hash", _hash_text(self.text))
@@ -96,6 +102,7 @@ class Record:
             "supersedes": self.supersedes,
             "lifecycle": self.lifecycle,
             "signal": self.signal,
+            "added_by": self.added_by,
         }
 
     @classmethod
@@ -118,6 +125,7 @@ class Record:
             supersedes=data.get("supersedes"),
             lifecycle=data.get("lifecycle", "active"),
             signal=data.get("signal"),
+            added_by=data.get("added_by"),
         )
 
 

@@ -78,3 +78,55 @@ def test_from_dict_score_none() -> None:
     }
     r = Record.from_dict(data)
     assert r.score is None
+
+
+# ---------------------------------------------------------------------------
+# added_by attribution field (t1)
+# ---------------------------------------------------------------------------
+
+
+def test_added_by_in_to_dict() -> None:
+    """to_dict() includes the 'added_by' key."""
+    r = Record(
+        id="ab-1",
+        text="some text",
+        type="note",
+        hash="",
+        metadata={},
+        scope=_default_scope(),
+        added_by="agent-x",
+    )
+    d = r.to_dict()
+    assert "added_by" in d
+    assert d["added_by"] == "agent-x"
+
+
+def test_added_by_round_trip() -> None:
+    """from_dict(to_dict(r)) round-trips a record with added_by set."""
+    scope = Scope(name="test-scope", visibility="public")
+    original = Record(
+        id="ab-2",
+        text="attribution test",
+        type="note",
+        hash="",
+        metadata={"src": "test"},
+        scope=scope,
+        added_by="some-agent",
+    )
+    restored = Record.from_dict(original.to_dict())
+    assert restored == original
+    assert restored.added_by == "some-agent"
+
+
+def test_added_by_defaults_none_when_missing() -> None:
+    """from_dict on a dict lacking 'added_by' yields record.added_by is None (no KeyError)."""
+    data = {
+        "id": "ab-3",
+        "text": "legacy record",
+        "type": "note",
+        "hash": "h",
+        "metadata": {},
+        "scope": {"name": "default", "visibility": "public"},
+    }
+    r = Record.from_dict(data)
+    assert r.added_by is None
