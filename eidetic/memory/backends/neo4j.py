@@ -99,6 +99,11 @@ class Neo4jBackend:
             case_sensitive=case_sensitive,
         )
 
+    def all(self) -> list[Record]:
+        """Enumerate every Memory node as a Record (no scope filtering)."""
+        rows = self._run("MATCH (m:Memory) RETURN m", {})
+        return [self._node_to_record(row["m"]) for row in rows]
+
     # -- internal helpers ------------------------------------------------
 
     def _get_driver(self) -> Any:

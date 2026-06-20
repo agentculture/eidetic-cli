@@ -224,6 +224,29 @@ def test_search_drops_private_record_for_different_scope() -> None:
     assert "priv1" not in ids
 
 
+# -- all() enumeration ---------------------------------------------------
+
+
+def test_all_enumerates_every_record() -> None:
+    """all() maps every node to a Record, ignoring scope visibility."""
+    pub = _make_record(rid="a1", text="alpha")
+    priv = _make_record(
+        rid="p1",
+        text="secret",
+        scope=Scope(name="personal", visibility="private"),
+    )
+    driver = _fake_driver([_fake_node(pub), _fake_node(priv)])
+    backend = Neo4jBackend(driver=driver)
+    all_ids = {r.id for r in backend.all()}
+    assert all_ids == {"a1", "p1"}
+
+
+def test_all_empty_store_returns_empty_list() -> None:
+    driver = _fake_driver([])
+    backend = Neo4jBackend(driver=driver)
+    assert backend.all() == []
+
+
 # -- driver connection errors ------------------------------------------
 
 
