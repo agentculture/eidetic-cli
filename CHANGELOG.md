@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-20
+
+### Added
+
+- `overview --store` (opt-in): live store stats appended to overview — per-backend record counts (files/mongo/graph), per-scope name+visibility+lifecycle breakdown, and link-connections (counted link/supersedes references, not graph edges). Narrow with `--backend {files,mongo,graph}` or `--scope NAME` (either implies --store). A down backend degrades to an `unavailable` line and overview still exits 0; bare overview is unchanged and never touches the store. New pure aggregator `eidetic.memory.stats`.
+
 ## [0.5.0] - 2026-06-20
 
 ### Added

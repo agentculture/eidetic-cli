@@ -121,6 +121,12 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
     try:
         backend = get_backend(_LABEL_TO_BACKEND[label])
         records = backend.all()
+        # Filtering + aggregation live INSIDE the try so a malformed record
+        # (e.g. a None scope from a corrupt store) degrades to 'unavailable'
+        # rather than raising past the exit-0 contract.
+        if scope_filter is not None:
+            records = [r for r in records if r.scope.name == scope_filter]
+        stats = compute_stats(records)
     except CliError as exc:
         return {"backend": label, "status": "unavailable", "reason": _first_line(exc.message)}
     except Exception as exc:  # noqa: BLE001 — driver errors are intentionally swallowed
@@ -131,9 +137,7 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
             with contextlib.suppress(Exception):  # best-effort cleanup
                 close()
 
-    if scope_filter is not None:
-        records = [r for r in records if r.scope.name == scope_filter]
-    return {"backend": label, "status": "live", **compute_stats(records)}
+    return {"backend": label, "status": "live", **stats}
 
 
 def store_payload(backend: str | None, scope_filter: str | None) -> dict[str, Any]:

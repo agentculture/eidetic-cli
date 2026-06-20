@@ -190,6 +190,25 @@ def test_unwrapped_driver_exception_is_swallowed(
     assert backend["reason"] == "server selection timeout"
 
 
+def test_malformed_record_degrades_not_raises(
+    data_dir: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A corrupt store whose all() yields a record with a None scope must degrade
+    # to 'unavailable' (aggregation runs inside the try), never raise past exit-0.
+    class _Corrupt:
+        def all(self) -> list[Record]:
+            bad = Record(
+                id="x", text="t", type="note", hash="", metadata={}, scope=Scope("s", "public")
+            )
+            bad.scope = None  # type: ignore[assignment]  # corrupt: trips compute_stats
+            return [bad]
+
+    monkeypatch.setattr(ov, "get_backend", lambda name: _Corrupt())
+    assert main(["overview", "--backend", "mongo", "--json"]) == 0
+    backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
+    assert backend["status"] == "unavailable"
+
+
 def test_close_is_called_on_probed_backend(data_dir: str, monkeypatch: pytest.MonkeyPatch) -> None:
     closed: list[bool] = []
 
