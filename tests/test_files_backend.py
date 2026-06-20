@@ -148,6 +148,27 @@ def test_scope_file_no_collision_same_name_different_visibility(
     assert priv_hits[0].text == "private text"
 
 
+# -- all() enumeration ---------------------------------------------------
+
+
+def test_all_enumerates_every_record_across_scopes(backend: FilesBackend) -> None:
+    """all() returns every stored record, including across scopes and private."""
+    backend.upsert(_make_record(rid="a1", text="alpha"))
+    backend.upsert(
+        _make_record(
+            rid="p1",
+            text="secret",
+            scope=Scope(name="personal", visibility="private"),
+        )
+    )
+    all_ids = {r.id for r in backend.all()}
+    assert all_ids == {"a1", "p1"}
+
+
+def test_all_empty_store_returns_empty_list(backend: FilesBackend) -> None:
+    assert backend.all() == []
+
+
 # -- corrupt JSONL guard -------------------------------------------------
 
 

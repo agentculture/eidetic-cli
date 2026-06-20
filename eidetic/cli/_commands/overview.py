@@ -32,6 +32,7 @@ _VERBS = [
     "doctor — check the agent-identity invariants",
     "remember — ingest memory records (JSON or NDJSON)",
     "recall — search the memory store",
+    "sweep — apply lifecycle transitions (shadow/archive) across the store",
 ]
 
 

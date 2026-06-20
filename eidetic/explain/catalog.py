@@ -192,6 +192,48 @@ records marked private, preventing accidental private-to-public leaks.
 """
 
 
+_SWEEP = """\
+# eidetic-cli sweep
+
+Apply lifecycle transitions across the whole memory store. Loads every record,
+runs the pure lifecycle engine, and (unless `--dry-run`) upserts the records
+whose `lifecycle` changed. It never deletes — it only ever flips `lifecycle` to
+`shadowed` or `archived` and persists the record in place.
+
+## Rules
+
+- **Shadowing (authoritative, within-scope only).** If record A declares
+  `supersedes == B.id` and A and B share the SAME scope (name AND visibility),
+  B is marked `shadowed`. A `supersedes` link that crosses scopes never shadows,
+  preserving the public/private no-leak invariant.
+- **Archival (age OR signal).** A record is marked `archived` when it is older
+  than ~1 year (`created`; an unknown date is age-neutral) OR its freshness
+  signal falls below the archive threshold.
+- **Protected exemption.** A record whose `metadata.protected` is truthy is
+  never shadowed and never archived.
+- **Suggestions.** Likely same-scope conflicts (high text overlap) are RETURNED
+  for human confirmation only — never auto-applied.
+
+## Flags
+
+- `--backend` — memory backend to sweep: `files`, `neo4j`, or `mongo` (default:
+  `files`).
+- `--dry-run` — report transitions without writing any change.
+- `--json` — emit structured JSON output.
+
+## Exit codes
+
+- `0` success
+- `2` environment / setup error (backend unavailable)
+
+## Behavior
+
+Reports counts of `shadowed` and `archived` transitions plus any advisory
+conflict suggestions. With `--dry-run`, the same report is produced but nothing
+is persisted. No code path deletes a record.
+"""
+
+
 ENTRIES: dict[tuple[str, ...], str] = {
     (): _ROOT,
     ("eidetic-cli",): _ROOT,
@@ -208,4 +250,5 @@ ENTRIES: dict[tuple[str, ...], str] = {
     ("cli", "overview"): _CLI,
     ("remember",): _REMEMBER,
     ("recall",): _RECALL,
+    ("sweep",): _SWEEP,
 }
