@@ -98,6 +98,45 @@ def test_scopes_sorted_by_name_then_visibility() -> None:
     assert order == [("alpha", "private"), ("alpha", "public"), ("zeta", "public")]
 
 
+def test_all_three_lifecycles_in_one_scope() -> None:
+    # A single scope carrying one of each lifecycle: the per-bucket breakdown
+    # must split cleanly and still sum to total. (Diverse-review edge case.)
+    lab = Scope(name="lab", visibility="private")
+    records = [
+        _rec("a", scope=lab, lifecycle="active"),
+        _rec("b", scope=lab, lifecycle="shadowed"),
+        _rec("c", scope=lab, lifecycle="archived"),
+    ]
+    stats = compute_stats(records)
+    assert len(stats["scopes"]) == 1
+    entry = stats["scopes"][0]
+    assert (entry["name"], entry["visibility"]) == ("lab", "private")
+    assert entry["total"] == 3
+    assert entry["active"] == 1 and entry["shadowed"] == 1 and entry["archived"] == 1
+
+
+def test_same_name_different_visibility_are_two_entries() -> None:
+    # Same scope name but different visibility => two distinct entries with
+    # independent counts (the (name, visibility) tuple is the bucket key).
+    pub = Scope(name="qq", visibility="public")
+    priv = Scope(name="qq", visibility="private")
+    stats = compute_stats(
+        [
+            _rec("a", scope=pub, lifecycle="active"),
+            _rec("b", scope=pub, lifecycle="shadowed"),
+            _rec("c", scope=priv, lifecycle="archived"),
+        ]
+    )
+    assert [(s["name"], s["visibility"]) for s in stats["scopes"]] == [
+        ("qq", "private"),
+        ("qq", "public"),
+    ]
+    by_kv = {(s["name"], s["visibility"]): s for s in stats["scopes"]}
+    assert by_kv[("qq", "public")]["total"] == 2
+    assert by_kv[("qq", "public")]["shadowed"] == 1
+    assert by_kv[("qq", "private")]["archived"] == 1
+
+
 def test_unknown_lifecycle_is_bucketed_as_active() -> None:
     # A record carrying a lifecycle value outside the known set must not vanish
     # from the per-scope total; it is counted as active (the lenient default).

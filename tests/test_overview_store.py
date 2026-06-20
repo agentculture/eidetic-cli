@@ -149,6 +149,24 @@ def test_scope_filter_narrows_counts(data_dir: str, capsys: pytest.CaptureFixtur
     assert [s["name"] for s in files["scopes"]] == ["qq"]
 
 
+def test_scope_filter_is_name_only_across_visibilities(
+    data_dir: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --scope filters on NAME only, so a name shared across visibilities keeps
+    # BOTH records (and surfaces as two scope entries). Documents the semantics.
+    _seed(Scope("qq", "public"), "a")
+    _seed(Scope("qq", "private"), "b")
+    _seed(Scope("other", "public"), "c")
+
+    assert main(["overview", "--backend", "files", "--scope", "qq", "--json"]) == 0
+    files = json.loads(capsys.readouterr().out)["store"]["backends"][0]
+    assert files["total"] == 2
+    assert {(s["name"], s["visibility"]) for s in files["scopes"]} == {
+        ("qq", "public"),
+        ("qq", "private"),
+    }
+
+
 def test_unknown_scope_is_zero_not_error(data_dir: str, capsys: pytest.CaptureFixture[str]) -> None:
     _seed(Scope("qq", "private"), "a")
     # An unknown scope yields an explicit zero-count section, exit 0 — not a crash.
@@ -229,6 +247,32 @@ def test_malformed_record_degrades_not_raises(
     assert main(["overview", "--backend", "mongo", "--json"]) == 0
     backend = json.loads(capsys.readouterr().out)["store"]["backends"][0]
     assert backend["status"] == "unavailable"
+
+
+def test_probe_passes_fast_timeout_to_backend(
+    data_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The probe must forward a short timeout_ms to get_backend so a down backend
+    # fails fast instead of blocking on the default 5s server-selection timeout.
+    seen: dict[str, object] = {}
+
+    class _Empty:
+        def all(self) -> list[Record]:
+            return []
+
+    def fake(name: str, **kw: object) -> object:
+        seen.update(kw)
+        return _Empty()
+
+    monkeypatch.setenv("EIDETIC_STORE_PROBE_TIMEOUT_MS", "250")
+    monkeypatch.setattr(ov, "get_backend", fake)
+    assert main(["overview", "--backend", "mongo"]) == 0
+    assert seen.get("timeout_ms") == 250
+
+
+def test_probe_timeout_falls_back_on_bad_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EIDETIC_STORE_PROBE_TIMEOUT_MS", "not-a-number")
+    assert ov._probe_timeout_ms() == ov._DEFAULT_PROBE_TIMEOUT_MS
 
 
 def test_close_is_called_on_probed_backend(data_dir: str, monkeypatch: pytest.MonkeyPatch) -> None:
