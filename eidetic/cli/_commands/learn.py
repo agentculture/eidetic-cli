@@ -36,6 +36,7 @@ Commands
   eidetic-cli recall             Search the memory store.
   eidetic-cli sweep              Apply lifecycle transitions (shadow/archive).
   eidetic-cli migrate qq         Import legacy QQ memory (files/mongo/neo4j).
+  eidetic-cli migrate store      Upgrade store format (Record -> Envelope JSONL).
   eidetic-cli cli overview       Describe the CLI surface itself.
 
 Record fields (selected)
@@ -91,6 +92,10 @@ def _as_json_payload() -> dict[str, object]:
             {"path": ["recall"], "summary": "Search the memory store."},
             {"path": ["sweep"], "summary": "Apply lifecycle transitions (shadow/archive)."},
             {"path": ["migrate", "qq"], "summary": "Import legacy QQ memory."},
+            {
+                "path": ["migrate", "store"],
+                "summary": "Upgrade store format (Record -> Envelope JSONL).",
+            },
             {"path": ["cli", "overview"], "summary": "Describe the CLI surface."},
         ],
         "record_fields": {

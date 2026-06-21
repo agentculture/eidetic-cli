@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-21
+
+### Added
+
+- `migrate store` — one-shot, idempotent in-place upgrade of an existing store from legacy Record JSONL to data-refinery Envelope JSONL (#13).
+
+### Changed
+
+- Storage is now owned by the sibling data-refinery-cli (contract v2): eidetic depends on `data-refinery-cli[store]` and imports `data_refinery.store` / `data_refinery.quality` for the opaque KV + data-quality layer instead of shipping its own files/mongo/neo4j backends. Memory semantics — record schema, the four recall modes, scoring, freshness signal, lifecycle — stay in eidetic (#13).
+- Runtime dependencies dropped direct `neo4j` + `pymongo`; now declare `data-refinery-cli[store]>=0.5.2,<0.6` (the extra provides those drivers transitively).
+- The mongo/neo4j stack is no longer owned here: bring it up with `data-refinery stack up` / the `ghcr.io/agentculture/data-refinery-stack` image. Removed eidetic`'`s own `docker-compose.yml`.
+
+### Security
+
+- `migrate store` now canonicalises the resolved store directory and asserts each per-file temp path stays within it before writing, making the trust boundary explicit on the JSONL-rewrite path (clears the SonarCloud path-construction finding on #13).
+
 ## [0.7.1] - 2026-06-20
 
 ### Fixed

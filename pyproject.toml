@@ -1,6 +1,6 @@
 [project]
 name = "eidetic-cli"
-version = "0.7.1"
+version = "0.8.0"
 description = "Agent/CLI providing eidetic perfect-recall memory"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,13 @@ classifiers = [
     "Topic :: Software Development",
     "Intended Audience :: Developers",
 ]
-dependencies = ["neo4j", "pymongo"]
+# Storage substrate is owned by the sibling data-refinery-cli (issue #13):
+# eidetic imports `data_refinery.store` / `data_refinery.quality` for the opaque
+# KV + data-quality layer and keeps only the memory semantics (schema, recall
+# ranking, scoring, freshness signal, lifecycle). The `[store]` extra transitively
+# provides neo4j + pymongo for the mongo/neo4j backends and migrate_qq's legacy
+# source reads. Pinned to contract version 2 (data-refinery-cli 0.5.x).
+dependencies = ["data-refinery-cli[store]>=0.5.2,<0.6"]
 
 [project.urls]
 Homepage = "https://github.com/agentculture/eidetic-cli"

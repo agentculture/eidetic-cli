@@ -24,7 +24,6 @@ import pytest
 
 from eidetic.cli._commands.remember import cmd_remember, register
 from eidetic.memory.backend import get_backend
-from eidetic.memory.backends.files import FilesBackend
 from eidetic.memory.scope import Scope
 from eidetic.memory.stats import compute_stats
 
@@ -180,26 +179,33 @@ def test_remember_preserves_explicit_added_by(data_dir: str) -> None:
 
 
 def test_legacy_record_without_added_by_loads_as_none(tmp_path: Path) -> None:
-    """A JSONL record that has no 'added_by' key at all loads with added_by=None.
+    """An envelope with no 'added_by' in metadata loads with added_by=None.
 
-    This exercises FilesBackend's reader directly, bypassing remember, to verify
+    Writes an envelope in data_refinery JSONL format that omits 'added_by' from
+    the metadata dict, then verifies the adapter returns added_by=None for
     backward-compat with pre-feature records already persisted on disk.
     """
+    import os as _os
+
     base = tmp_path / "legacy_mem"
     base.mkdir()
-    legacy_doc = {
+    # data_refinery envelope format: 'content' not 'text'; metadata is opaque.
+    envelope_doc = {
         "id": "e2e-legacy-1",
-        "text": "legacy record without added_by",
-        "type": "note",
         "hash": "h-legacy",
-        "metadata": {},
+        "content": "legacy record without added_by",
         "scope": {"name": "default", "visibility": "public"},
-        # 'added_by' deliberately absent
+        "metadata": {
+            "type": "note",
+            "record_metadata": {},
+            # 'added_by' deliberately absent
+        },
     }
     jsonl_file = base / "default__public.jsonl"
-    jsonl_file.write_text(json.dumps(legacy_doc) + "\n", encoding="utf-8")
+    jsonl_file.write_text(json.dumps(envelope_doc) + "\n", encoding="utf-8")
 
-    backend = FilesBackend(base_dir=str(base))
+    _os.environ["EIDETIC_DATA_DIR"] = str(base)
+    backend = get_backend("files")
     records = {r.id: r for r in backend.all()}
     assert "e2e-legacy-1" in records
     assert records["e2e-legacy-1"].added_by is None
@@ -287,44 +293,37 @@ def test_contributors_union_stamped_and_explicit(data_dir: str) -> None:
 
 @_skip_no_mongo
 def test_mongo_remember_stamps_nick(tmp_path: Path) -> None:
-    """Mongo backend: same stamping guarantee — skip when MongoDB is down."""
+    """Mongo adapter: same stamping guarantee — skip when MongoDB is down."""
     import os as _os
 
-    from eidetic.memory.backends.mongo import MongoBackend
-
     uri = _os.environ.get("EIDETIC_MONGO_URI", "mongodb://localhost:27018")
-    db_name = "eidetic_test_e2e_t7"
-    backend = MongoBackend(uri=uri, db=db_name)
-    # Clean slate.
-    backend._collection.drop()  # type: ignore[attr-defined]
+    _os.environ["EIDETIC_MONGO_URI"] = uri
 
+    backend = get_backend("mongo")
+
+    # Build a namespace that mimics what cmd_remember produces.
+    ns = argparse.Namespace(
+        record=json.dumps({"id": "mongo-e2e-1", "text": "mongo e2e stamp", "type": "note"}),
+        backend="mongo",
+        scope="default",
+        visibility="public",
+        added_by=None,
+        json=False,
+    )
+    # Patch get_backend to return our controlled backend.
+    import eidetic.cli._commands.remember as rem_mod
+
+    orig = rem_mod.get_backend
+    rem_mod.get_backend = lambda name, **kw: backend  # type: ignore[assignment]
     try:
-        # Build a namespace that mimics what cmd_remember produces.
-        ns = argparse.Namespace(
-            record=json.dumps({"id": "mongo-e2e-1", "text": "mongo e2e stamp", "type": "note"}),
-            backend="mongo",
-            scope="default",
-            visibility="public",
-            added_by=None,
-            json=False,
-        )
-        # Patch get_backend to return our controlled backend.
-        import eidetic.cli._commands.remember as rem_mod
-
-        orig = rem_mod.get_backend
-        rem_mod.get_backend = lambda name, **kw: backend  # type: ignore[assignment]
-        try:
-            rc = cmd_remember(ns)
-        finally:
-            rem_mod.get_backend = orig  # type: ignore[assignment]
-
-        assert rc == 0
-        records = {r.id: r for r in backend.all()}
-        assert "mongo-e2e-1" in records
-        assert records["mongo-e2e-1"].added_by == _EXPECTED_NICK
+        rc = cmd_remember(ns)
     finally:
-        backend._collection.drop()  # type: ignore[attr-defined]
-        backend.close()
+        rem_mod.get_backend = orig  # type: ignore[assignment]
+
+    assert rc == 0
+    records = {r.id: r for r in backend.all()}
+    assert "mongo-e2e-1" in records
+    assert records["mongo-e2e-1"].added_by == _EXPECTED_NICK
 
 
 # ===========================================================================
@@ -334,44 +333,33 @@ def test_mongo_remember_stamps_nick(tmp_path: Path) -> None:
 
 @_skip_no_neo4j
 def test_neo4j_remember_stamps_nick(tmp_path: Path) -> None:
-    """Neo4j backend: same stamping guarantee — skip when Neo4j is down."""
+    """Neo4j adapter: same stamping guarantee — skip when Neo4j is down."""
     import os as _os
 
-    from eidetic.memory.backends.neo4j import Neo4jBackend
-
     uri = _os.environ.get("EIDETIC_NEO4J_URI", "bolt://localhost:7688")
-    backend = Neo4jBackend(uri=uri, auth=("neo4j", "password"))
+    _os.environ["NEO4J_URI"] = uri
 
+    backend = get_backend("neo4j")
+
+    ns = argparse.Namespace(
+        record=json.dumps({"id": "neo4j-e2e-1", "text": "neo4j e2e stamp", "type": "note"}),
+        backend="neo4j",
+        scope="default",
+        visibility="public",
+        added_by=None,
+        json=False,
+    )
+
+    import eidetic.cli._commands.remember as rem_mod
+
+    orig = rem_mod.get_backend
+    rem_mod.get_backend = lambda name, **kw: backend  # type: ignore[assignment]
     try:
-        # Wipe any test data first.
-        backend._driver.execute_query(  # type: ignore[attr-defined]
-            "MATCH (n:EideticRecord) WHERE n.id STARTS WITH 'neo4j-e2e-' DETACH DELETE n"
-        )
-
-        ns = argparse.Namespace(
-            record=json.dumps({"id": "neo4j-e2e-1", "text": "neo4j e2e stamp", "type": "note"}),
-            backend="neo4j",
-            scope="default",
-            visibility="public",
-            added_by=None,
-            json=False,
-        )
-
-        import eidetic.cli._commands.remember as rem_mod
-
-        orig = rem_mod.get_backend
-        rem_mod.get_backend = lambda name, **kw: backend  # type: ignore[assignment]
-        try:
-            rc = cmd_remember(ns)
-        finally:
-            rem_mod.get_backend = orig  # type: ignore[assignment]
-
-        assert rc == 0
-        records = {r.id: r for r in backend.all()}
-        assert "neo4j-e2e-1" in records
-        assert records["neo4j-e2e-1"].added_by == _EXPECTED_NICK
+        rc = cmd_remember(ns)
     finally:
-        backend._driver.execute_query(  # type: ignore[attr-defined]
-            "MATCH (n:EideticRecord) WHERE n.id STARTS WITH 'neo4j-e2e-' DETACH DELETE n"
-        )
-        backend.close()
+        rem_mod.get_backend = orig  # type: ignore[assignment]
+
+    assert rc == 0
+    records = {r.id: r for r in backend.all()}
+    assert "neo4j-e2e-1" in records
+    assert records["neo4j-e2e-1"].added_by == _EXPECTED_NICK
