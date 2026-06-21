@@ -86,8 +86,31 @@ def _convert_line(raw: str, path: Path) -> tuple[str, bool]:
     return json.dumps(envelope.to_dict()), True
 
 
-def _migrate_file(path: Path, *, dry_run: bool) -> tuple[int, int, bool]:
+def _ensure_within(base: str, candidate: Path) -> Path:
+    """Return *candidate*'s canonical path, asserting it stays inside *base*.
+
+    The store directory is operator-supplied (``EIDETIC_DATA_DIR`` /
+    ``--data-dir``), so before writing we canonicalise the target (resolving any
+    symlinks) and confirm it does not escape the resolved store directory. This
+    makes the trust boundary explicit: a crafted data-dir can never redirect a
+    migration write outside the store. *base* must already be canonical (an
+    :func:`os.path.realpath`).
+    """
+    resolved = os.path.realpath(candidate)
+    if os.path.commonpath((base, resolved)) != base:
+        raise CliError(
+            code=EXIT_ENV_ERROR,
+            message=f"refusing to write outside the store directory: {candidate}",
+            remediation=f"ensure {base} is a normal directory holding only its own JSONL files",
+        )
+    return Path(resolved)
+
+
+def _migrate_file(path: Path, base: str, *, dry_run: bool) -> tuple[int, int, bool]:
     """Migrate a single JSONL file in place.
+
+    *base* is the canonical (``realpath``) store directory; the rewritten temp
+    file is validated to live inside it before any bytes are written.
 
     Returns ``(records_converted, already_envelope, file_rewritten)``.  When
     *dry_run* is ``True`` the return value reflects what *would* happen but no
@@ -112,7 +135,7 @@ def _migrate_file(path: Path, *, dry_run: bool) -> tuple[int, int, bool]:
 
     file_rewritten = changed
     if changed and not dry_run:
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = _ensure_within(base, path.with_suffix(path.suffix + ".tmp"))
         tmp.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
         os.replace(tmp, path)
 
@@ -134,9 +157,11 @@ def migrate_store(data_dir: str | None = None, *, dry_run: bool = False) -> Migr
     if not base.is_dir():
         return stats
 
+    # Canonicalise once; every per-file write is then validated to stay inside it.
+    base_canonical = os.path.realpath(base)
     for path in sorted(base.glob("*.jsonl")):
         stats.files_scanned += 1
-        converted, already, rewritten = _migrate_file(path, dry_run=dry_run)
+        converted, already, rewritten = _migrate_file(path, base_canonical, dry_run=dry_run)
         stats.records_converted += converted
         stats.already_envelope += already
         if rewritten:

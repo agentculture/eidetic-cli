@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from data_refinery.store import Envelope
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import record_from_envelope
-from eidetic.memory.migrate_store import migrate_store
+from eidetic.memory.migrate_store import _ensure_within, migrate_store
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
@@ -111,5 +112,28 @@ def test_migrate_corrupt_record_fields_raises_cli_error(tmp_path: Path) -> None:
 
     with pytest.raises(CliError) as excinfo:
         migrate_store(str(d))
+
+    assert excinfo.value.code == EXIT_ENV_ERROR
+
+
+def test_ensure_within_accepts_path_inside_base(tmp_path: Path) -> None:
+    """A temp path that lives inside the (canonical) store dir is returned as-is."""
+    base = os.path.realpath(tmp_path)
+    inside = tmp_path / "notes__public.jsonl.tmp"
+    assert _ensure_within(base, inside) == Path(os.path.realpath(inside))
+
+
+def test_ensure_within_rejects_path_outside_base(tmp_path: Path) -> None:
+    """A target that canonicalises outside the store dir is refused with CliError.
+
+    Guards the operator-supplied data-dir trust boundary: a write can never be
+    redirected outside the resolved store directory.
+    """
+    base = os.path.realpath(tmp_path / "store")
+    (tmp_path / "store").mkdir()
+    escape = tmp_path / "store" / ".." / "elsewhere.jsonl.tmp"
+
+    with pytest.raises(CliError) as excinfo:
+        _ensure_within(base, escape)
 
     assert excinfo.value.code == EXIT_ENV_ERROR

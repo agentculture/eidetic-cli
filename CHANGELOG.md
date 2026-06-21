@@ -17,6 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Runtime dependencies dropped direct `neo4j` + `pymongo`; now declare `data-refinery-cli[store]>=0.5.2,<0.6` (the extra provides those drivers transitively).
 - The mongo/neo4j stack is no longer owned here: bring it up with `data-refinery stack up` / the `ghcr.io/agentculture/data-refinery-stack` image. Removed eidetic`'`s own `docker-compose.yml`.
 
+### Security
+
+- `migrate store` now canonicalises the resolved store directory and asserts each per-file temp path stays within it before writing, making the trust boundary explicit on the JSONL-rewrite path (clears the SonarCloud path-construction finding on #13).
+
+## [0.7.1] - 2026-06-20
+
+### Fixed
+
+- `overview` no longer crashes when a record carries a non-string `metadata.author`: `compute_stats` now only unions non-empty strings into the per-scope contributor set, so `sorted()` cannot raise `TypeError` on mixed types (found by colleague review on #10; preserves the always-on overview never-fail invariant)
+
 ## [0.7.0] - 2026-06-20
 
 ### Added
