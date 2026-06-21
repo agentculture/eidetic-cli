@@ -49,6 +49,76 @@ def _default_data_dir() -> str:
     return os.environ.get("EIDETIC_DATA_DIR") or str(Path.home() / ".eidetic" / "memory")
 
 
+def _convert_line(raw: str, path: Path) -> tuple[str, bool]:
+    """Parse and classify one raw JSONL line from *path*.
+
+    Returns ``(serialised_line, converted)`` where *converted* is ``True`` when
+    a legacy Record was remapped to Envelope format (i.e. the file has changed).
+
+    Raises :class:`CliError` (``EXIT_ENV_ERROR``) when the line is unparseable
+    JSON *or* valid JSON that cannot be coerced into a :class:`Record` (missing
+    required fields, wrong types, etc.).  Blank lines must be filtered by the
+    caller before invoking this function.
+    """
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise CliError(
+            code=EXIT_ENV_ERROR,
+            message=f"corrupt line in {path.name}: {exc}",
+            remediation=f"remove or repair the corrupt line in {path}",
+        ) from exc
+
+    if "content" in obj:
+        # Already an Envelope — pass through untouched (idempotent).
+        return json.dumps(obj), False
+
+    # A legacy Record line (has "text"): convert via the canonical mapping.
+    try:
+        envelope = record_to_envelope(Record.from_dict(obj))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CliError(
+            code=EXIT_ENV_ERROR,
+            message=f"corrupt line in {path.name}: {exc}",
+            remediation=f"remove or repair the corrupt line in {path}",
+        ) from exc
+
+    return json.dumps(envelope.to_dict()), True
+
+
+def _migrate_file(path: Path, *, dry_run: bool) -> tuple[int, int, bool]:
+    """Migrate a single JSONL file in place.
+
+    Returns ``(records_converted, already_envelope, file_rewritten)``.  When
+    *dry_run* is ``True`` the return value reflects what *would* happen but no
+    bytes are written to disk.
+    """
+    out_lines: list[str] = []
+    records_converted = 0
+    already_envelope = 0
+    changed = False
+
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        serialised, converted = _convert_line(line, path)
+        out_lines.append(serialised)
+        if converted:
+            records_converted += 1
+            changed = True
+        else:
+            already_envelope += 1
+
+    file_rewritten = changed
+    if changed and not dry_run:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+
+    return records_converted, already_envelope, file_rewritten
+
+
 def migrate_store(data_dir: str | None = None, *, dry_run: bool = False) -> MigrationStats:
     """Remap every Record-format line under *data_dir* to Envelope format in place.
 
@@ -66,39 +136,10 @@ def migrate_store(data_dir: str | None = None, *, dry_run: bool = False) -> Migr
 
     for path in sorted(base.glob("*.jsonl")):
         stats.files_scanned += 1
-        changed = False
-        out_lines: list[str] = []
-
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise CliError(
-                    code=EXIT_ENV_ERROR,
-                    message=f"corrupt line in {path.name}: {exc}",
-                    remediation=f"remove or repair the corrupt line in {path}",
-                ) from exc
-
-            if "content" in obj:
-                # Already an Envelope — pass through untouched (idempotent).
-                stats.already_envelope += 1
-                out_lines.append(json.dumps(obj))
-                continue
-
-            # A legacy Record line (has "text"): convert via the canonical mapping.
-            envelope = record_to_envelope(Record.from_dict(obj))
-            out_lines.append(json.dumps(envelope.to_dict()))
-            stats.records_converted += 1
-            changed = True
-
-        if changed:
+        converted, already, rewritten = _migrate_file(path, dry_run=dry_run)
+        stats.records_converted += converted
+        stats.already_envelope += already
+        if rewritten:
             stats.files_rewritten += 1
-            if not dry_run:
-                tmp = path.with_suffix(path.suffix + ".tmp")
-                tmp.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
-                os.replace(tmp, path)
 
     return stats

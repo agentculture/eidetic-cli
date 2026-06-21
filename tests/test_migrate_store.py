@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from data_refinery.store import Envelope
 
+from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.backend import record_from_envelope
 from eidetic.memory.migrate_store import migrate_store
 from eidetic.memory.record import Record
@@ -91,3 +93,23 @@ def test_migrate_missing_dir_is_noop(tmp_path: Path) -> None:
     assert stats.files_scanned == 0
     assert stats.records_converted == 0
     assert stats.files_rewritten == 0
+
+
+def test_migrate_corrupt_record_fields_raises_cli_error(tmp_path: Path) -> None:
+    """A valid JSON line missing required Record fields must raise CliError(EXIT_ENV_ERROR).
+
+    ``Record.from_dict`` indexes ``data["text"]``, ``data["type"]``, ``data["scope"]``,
+    etc. directly, so a line like ``{"id": "x"}`` will raise ``KeyError``.  The
+    migration must catch that and re-raise as a structured :class:`CliError` — never
+    letting the raw ``KeyError`` traceback escape to stderr.
+    """
+    d = tmp_path / "memory"
+    d.mkdir(parents=True)
+    f = d / "notes__public.jsonl"
+    # Valid JSON but missing all required Record fields ("text", "type", "scope", …).
+    f.write_text(json.dumps({"id": "x"}) + "\n", encoding="utf-8")
+
+    with pytest.raises(CliError) as excinfo:
+        migrate_store(str(d))
+
+    assert excinfo.value.code == EXIT_ENV_ERROR
