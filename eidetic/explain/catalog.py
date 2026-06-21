@@ -261,9 +261,9 @@ whose `lifecycle` changed. It never deletes — it only ever flips `lifecycle` t
 _MIGRATE = """\
 # eidetic-cli migrate
 
-One-shot import of legacy memory sources into the eidetic store. Currently
-exposes a single target, `migrate qq`, which reads the three legacy "QQ" memory
-layers and upserts every mapped record idempotently.
+One-shot maintenance imports/upgrades for the eidetic store. Exposes two
+targets: `migrate qq` (import the legacy "QQ" memory layers) and `migrate store`
+(upgrade an existing store's on-disk format from Record to Envelope JSONL).
 
 ## migrate qq
 
@@ -286,7 +286,19 @@ scope by default (`--scope qq --visibility private`). Migrated personal
 knowledge therefore never surfaces in a public recall. Both flags are
 configurable.
 
-## Flags
+## migrate store
+
+A one-shot, **idempotent** in-place upgrade of an existing store from the legacy
+Record-format JSONL to data-refinery's Envelope-format JSONL (issue #13). eidetic
+no longer owns its storage engine — data-refinery's files backend reads opaque
+Envelopes — so a store written by an older eidetic is remapped once before the
+new reader can interpret it. Already-migrated lines pass through untouched, so
+re-running converts nothing. Reports `files_scanned`, `records_converted`,
+`already_envelope`, and `files_rewritten`; `--dry-run` reports the same counts
+but writes nothing; `--data-dir` overrides the store location (default:
+`EIDETIC_DATA_DIR`, else `~/.eidetic/memory`).
+
+## migrate qq flags
 
 - `--file PATH` — QQ markdown source to read (repeatable; defaults to the known
   `core.md`/`notes.md` paths).
@@ -313,6 +325,8 @@ is persisted. No code path deletes a record.
 
     eidetic-cli migrate qq
     eidetic-cli migrate qq --file core.md --file notes.md --json
+    eidetic-cli migrate store --dry-run --json
+    eidetic-cli migrate store
 """
 
 
@@ -336,4 +350,5 @@ ENTRIES: dict[tuple[str, ...], str] = {
     # t6: one-shot QQ memory importer
     ("migrate",): _MIGRATE,
     ("migrate", "qq"): _MIGRATE,
+    ("migrate", "store"): _MIGRATE,
 }

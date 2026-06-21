@@ -172,27 +172,18 @@ def test_top_k_limits_results() -> None:
 # -- cross-backend consistency --------------------------------------------
 
 
-def test_modes_identical_across_files_and_mongo(tmp_path, monkeypatch) -> None:
-    """The same query+mode yields the same id ordering on files and mongo."""
-    from eidetic.memory.backends.files import FilesBackend
-    from eidetic.memory.backends.mongo import MongoBackend
-    from tests.test_mongo_backend import _FakeClient
+def test_modes_identical_across_files_and_mongo() -> None:
+    """Cross-backend ranking consistency is now data-refinery's concern.
 
-    monkeypatch.setenv("EIDETIC_EMBED_URL", "http://127.0.0.1:1/v1")
-    records = [
-        _rec("a", "jetson nano power consumption"),
-        _rec("b", "orin agx thermal design"),
-        _rec("c", "jetson power modes and nano clocks"),
-    ]
-    files = FilesBackend(base_dir=str(tmp_path / "mem"))
-    mongo = MongoBackend(client=_FakeClient())
-    for r in records:
-        files.upsert(r)
-        mongo.upsert(_rec(r.id, r.text))
-
-    scope = Scope(name="default", visibility="public")
-    for mode in ("exact", "keyword", "approximate", "hybrid"):
-        q = "jetson nano" if mode == "exact" else "jetson power"
-        fids = [r.id for r in files.search(q, 10, scope, None, mode)]
-        mids = [r.id for r in mongo.search(q, 10, scope, None, mode)]
-        assert fids == mids, f"mode {mode}: files={fids} mongo={mids}"
+    The old test compared eidetic's own FilesBackend and MongoBackend (which
+    both lived in eidetic/memory/backends/). Those classes are deleted; storage
+    now delegates to data_refinery.store. Ranking consistency across backends is
+    tested in data-refinery's own suite. eidetic's scoring.rank() is backend-
+    agnostic — it operates on Record lists regardless of origin.
+    """
+    pytest.skip(
+        reason=(
+            "Cross-backend ranking consistency is now data-refinery's concern; "
+            "eidetic's scoring.rank() is tested backend-agnostically above."
+        )
+    )

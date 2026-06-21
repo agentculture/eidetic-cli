@@ -5,9 +5,9 @@ Agent/CLI providing eidetic perfect-recall memory
 ## What you get
 
 - **An agent-first CLI** cited from [teken](https://github.com/agentculture/teken)
-  (`afi-cli`) — the runtime declares `neo4j` and `pymongo` for its Neo4j and Mongo
-  memory backends; consumers stay dependency-free because they call `eidetic`
-  over a subprocess boundary.
+  (`afi-cli`) — the runtime declares `data-refinery-cli[store]` as its storage
+  dependency; neo4j and pymongo arrive transitively via that extra. Consumers stay
+  dependency-free because they call `eidetic` over a subprocess boundary.
 - **A mesh identity** — `culture.yaml` (`suffix` + `backend`) and the matching
   prompt file (`CLAUDE.md` for `backend: claude`).
 - **The canonical guildmaster skill kit** under `.claude/skills/`, vendored
@@ -46,19 +46,25 @@ Every command supports `--json`. Results go to stdout, errors/diagnostics to
 stderr (never mixed). Exit codes: `0` success, `1` user error, `2` environment
 error, `3+` reserved.
 
-## Memory stores
+## Storage
 
-The `files` backend (default) is self-contained — JSONL on disk, no services. For
-the `neo4j` / `mongo` backends, eidetic owns its own stores via `docker-compose.yml`:
+The `files` backend (default) is self-contained — JSONL on disk, no services
+needed. For the `mongo` / `neo4j` (graph) backends, the storage stack is owned and
+published by [data-refinery-cli](https://github.com/agentculture/data-refinery-cli)
+as the GHCR image `ghcr.io/agentculture/data-refinery-stack`. Bring it up with:
 
 ```bash
-docker compose up -d                # eidetic-neo4j (bolt :7687) + eidetic-mongo (:27018)
-eidetic remember --backend mongo …  # the CLI's default connection settings already match
+data-refinery stack up              # mongo on host :27018, neo4j bolt :7687 / UI :7474
+eidetic remember --backend mongo …  # eidetic's default connection settings already match
 ```
 
-eidetic is the memory layer itself — these are eidetic's own stores (their store /
-Cypher / embedding logic is *adapted* from `data-refinery`, not a dependency on its
-running stack). Embeddings + rerank come from a separate model-gear HTTP endpoint
+eidetic depends on `data-refinery-cli[store]` (contract v2) and imports
+`data_refinery.store` / `data_refinery.quality` for storage operations. It keeps
+all memory semantics — the record schema, recall ranking modes, scoring, freshness
+signal, and no-hard-delete lifecycle — while the storage substrate is owned by
+data-refinery-cli. (Migration tracked in eidetic#13 / data-refinery-cli#1.)
+
+Embeddings + rerank come from a separate model-gear HTTP endpoint
 (`EIDETIC_EMBED_URL`, `EIDETIC_EMBED_MODEL` — default
 `http://localhost:8002/v1` + `Qwen/Qwen3-Embedding-0.6B`), with a deterministic
 local lexical fallback when it is absent. Only `approximate`/`hybrid` recall use

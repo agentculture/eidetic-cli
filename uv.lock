@@ -155,6 +155,21 @@ wheels = [
 ]
 
 [[package]]
+name = "data-refinery-cli"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/92/9feb57e53b8270e20d98229f4befb1f301eb2c9eb8cfd413c3bcb558cf40/data_refinery_cli-0.5.2.tar.gz", hash = "sha256:7c9ba77a12344e243443d6074877f59e208d981431d464abef6136609b6bc532", size = 180618, upload-time = "2026-06-21T09:04:02.773Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/54/2367fa22186ef4012fb2ac65d27cfedf8f31251dc705e870e2746696092c/data_refinery_cli-0.5.2-py3-none-any.whl", hash = "sha256:c2ba9c09534b2a49f196b30b999d251fa87c6701a31d2e22f2f1f7d0eb6b8439", size = 49984, upload-time = "2026-06-21T09:04:01.604Z" },
+]
+
+[package.optional-dependencies]
+store = [
+    { name = "neo4j" },
+    { name = "pymongo" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -165,11 +180,10 @@ wheels = [
 
 [[package]]
 name = "eidetic-cli"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
-    { name = "neo4j" },
-    { name = "pymongo" },
+    { name = "data-refinery-cli", extra = ["store"] },
 ]
 
 [package.dev-dependencies]
@@ -185,10 +199,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "neo4j" },
-    { name = "pymongo" },
-]
+requires-dist = [{ name = "data-refinery-cli", extras = ["store"], specifier = ">=0.5.2,<0.6" }]
 
 [package.metadata.requires-dev]
 dev = [

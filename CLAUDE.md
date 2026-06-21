@@ -14,7 +14,15 @@ build/CI/deploy baseline. Memory verbs (`remember`, `recall`, `sweep`,
 `migrate`) are added as additional noun groups on top of this scaffold —
 they do not replace it.
 
-The runtime package declares `neo4j` and `pymongo` as required dependencies for its Neo4j and Mongo memory backends. Embeddings and rerank still go over HTTP (no dep), and the files backend stays dependency-light for private/local scopes. Consumers stay dependency-free because they call `eidetic` over a subprocess boundary — that subprocess-not-import shape is the whole reason this is a CLI.
+The runtime package declares `data-refinery-cli[store]>=0.5.2,<0.6` (contract v2)
+as its storage dependency; `neo4j` and `pymongo` arrive transitively via the
+`[store]` extra. eidetic imports `data_refinery.store` (opaque KV) and
+`data_refinery.quality` (validate/dedup/integrity/freshness) and keeps all memory
+semantics: the record schema, the four recall ranking modes, scoring, the freshness
+signal, and the no-hard-delete lifecycle. Embeddings and rerank still go over HTTP
+(no dep), and the files backend stays dependency-light for private/local scopes.
+Consumers stay dependency-free because they call `eidetic` over a subprocess
+boundary — that subprocess-not-import shape is the whole reason this is a CLI.
 
 ## Memory surface (built — v0.3.0+)
 
@@ -166,9 +174,13 @@ memory stack (Claude's personal knowledge) into a private eidetic scope:
 The dependency story is settled: embeddings + rerank go over HTTP to
 `model-gear`'s OpenAI-compatible endpoint — no extra dep — and fall back to
 deterministic local lexical when offline. Heavy deps are behind eidetic's *process*
-boundary so consumers stay dependency-free. eidetic owns its own neo4j + mongo via
-`docker-compose.yml`; the store/cypher/embedding logic is adapted from the sibling
-`../autonomous-intelligence/data-refinery` (cite-don't-import).
+boundary so consumers stay dependency-free. Storage is now owned by
+[data-refinery-cli](https://github.com/agentculture/data-refinery-cli) (contract
+v2; tracked in eidetic#13 / data-refinery-cli#1) — eidetic consumes it by
+importing `data_refinery.store` / `data_refinery.quality`. The stack is the
+`ghcr.io/agentculture/data-refinery-stack` GHCR image, brought up with
+`data-refinery stack up` (mongo on host :27018, neo4j bolt :7687 / UI :7474, apoc,
+no auth — connection defaults are unchanged).
 
 ## Commands
 
@@ -222,6 +234,13 @@ machine-readable, designed to be driven by another agent, not just a human.
   payloads to the same streams. Every command accepts `--json`; honor it in any
   new command (text errors render `error:` + `hint:` lines; the `hint:` prefix is
   required by the rubric).
+
+- **`eidetic/memory/backend.py`** — single storage adapter that delegates to
+  `data_refinery.store`; the former per-backend files (`backends/files.py`,
+  `backends/mongo.py`, `backends/neo4j.py`) are replaced by this adapter. eidetic
+  retains all memory semantics: record schema, ranking modes, scoring, signal, and
+  lifecycle. `data_refinery.quality` handles validate/dedup/integrity/freshness at
+  the boundary.
 
 - **`eidetic/explain/catalog.py`** — `explain <path>` resolves command-path
   tuples to verbatim markdown docs. Adding a verb means adding its catalog entry

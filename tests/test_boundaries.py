@@ -6,20 +6,21 @@ Lock the eidetic-cli boundary claims:
   - JSON contract intact (--json emits valid JSON + error shape on stderr)
   - No autonomous extraction / UI (import guard)
 
-All tests are hermetic: use tmp_path + FilesBackend(base_dir=...),
+All tests are hermetic: use tmp_path + get_backend("files") with EIDETIC_DATA_DIR,
 never the real home store.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from eidetic.cli import main
-from eidetic.memory.backends.files import FilesBackend
+from eidetic.memory.backend import Backend, get_backend
 from eidetic.memory.lifecycle import compute_transitions
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
@@ -38,9 +39,10 @@ def tmp_store(tmp_path: pytest.Path) -> str:
 
 
 @pytest.fixture
-def backend(tmp_store: str) -> FilesBackend:
-    """FilesBackend over a temporary directory."""
-    return FilesBackend(base_dir=tmp_store)
+def backend(tmp_store: str) -> Backend:
+    """Files adapter backend over a temporary directory."""
+    os.environ["EIDETIC_DATA_DIR"] = tmp_store
+    return get_backend("files")
 
 
 def _make_record(
@@ -175,7 +177,7 @@ def test_no_destructive_ops_in_cli_commands() -> None:
 # ============================================================================
 
 
-def test_lifecycle_transitions_never_remove_records(backend: FilesBackend) -> None:
+def test_lifecycle_transitions_never_remove_records(backend: Backend) -> None:
     """Running lifecycle transitions does not delete records; only marks lifecycle."""
     # Create N records with DISTINCT text to avoid hash-dedup.
     # (Backend upsert deduplicates by hash, so same text = one record in store.)
@@ -225,7 +227,7 @@ def test_lifecycle_transitions_never_remove_records(backend: FilesBackend) -> No
 
 
 def test_private_record_not_leaked_in_public_recall(
-    backend: FilesBackend, tmp_store: str, capsys: pytest.CaptureFixture[str], monkeypatch
+    backend: Backend, tmp_store: str, capsys: pytest.CaptureFixture[str], monkeypatch
 ) -> None:
     """A private-scope record is NOT returned when querying from public scope."""
     monkeypatch.setenv("EIDETIC_DATA_DIR", tmp_store)
@@ -262,7 +264,7 @@ def test_private_record_not_leaked_in_public_recall(
     assert "p2" in result_ids or len(public_results) > 0, "Public record not found"
 
 
-def test_private_record_visible_to_same_scope(backend: FilesBackend) -> None:
+def test_private_record_visible_to_same_scope(backend: Backend) -> None:
     """A private-scope record IS returned when querying from the same scope."""
     private_scope = Scope(name="personal", visibility="private")
 
@@ -285,7 +287,7 @@ def test_private_record_visible_to_same_scope(backend: FilesBackend) -> None:
     assert "p1" in result_ids, "Private record not found in same scope"
 
 
-def test_public_record_visible_to_any_scope(backend: FilesBackend) -> None:
+def test_public_record_visible_to_any_scope(backend: Backend) -> None:
     """A public-scope record is returned regardless of query scope."""
     public_scope = Scope(name="default", visibility="public")
     private_scope = Scope(name="personal", visibility="private")

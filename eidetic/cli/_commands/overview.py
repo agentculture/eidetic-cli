@@ -62,6 +62,7 @@ _VERBS = [
     "recall — search the memory store",
     "sweep — apply lifecycle transitions (shadow/archive) across the store",
     "migrate qq — import legacy QQ memory (files/mongo/neo4j)",
+    "migrate store — upgrade store format (Record -> Envelope JSONL)",
 ]
 
 

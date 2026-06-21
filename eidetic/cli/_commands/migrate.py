@@ -1,14 +1,17 @@
-"""``eidetic-cli migrate`` — one-shot import of legacy memory sources.
+"""``eidetic-cli migrate`` — one-shot maintenance imports/upgrades.
 
-Currently exposes a single target, ``migrate qq``, which reads the three legacy
-"QQ" memory layers (markdown files, MongoDB, Neo4j) and upserts every mapped
-record idempotently into the configured backend.
+Exposes two targets:
 
-Each source reader is guarded: a down/absent Mongo or Neo4j is skipped with a
-warning (to stderr) and the run completes with the remaining sources. QQ files
-hold PERSONAL data, so migration writes into a PRIVATE scope by default
-(``--scope qq --visibility private``) — migrated personal knowledge never
-surfaces in a public recall.
+* ``migrate qq`` reads the three legacy "QQ" memory layers (markdown files,
+  MongoDB, Neo4j) and upserts every mapped record idempotently into the
+  configured backend. Each source reader is guarded: a down/absent Mongo or
+  Neo4j is skipped with a warning (to stderr) and the run completes with the
+  remaining sources. QQ files hold PERSONAL data, so migration writes into a
+  PRIVATE scope by default (``--scope qq --visibility private``) — migrated
+  personal knowledge never surfaces in a public recall.
+* ``migrate store`` upgrades an existing store's on-disk format in place from
+  the legacy Record JSONL to data-refinery's Envelope JSONL (issue #13). It is
+  idempotent — already-migrated lines pass through untouched.
 
 Agent-first: register + handler; ``--json`` supported; failures raise
 :class:`CliError`, never a traceback.
@@ -21,6 +24,7 @@ import argparse
 from eidetic.cli._output import emit_result
 from eidetic.memory import migrate_qq
 from eidetic.memory.backend import get_backend
+from eidetic.memory.migrate_store import migrate_store
 from eidetic.memory.scope import Scope
 
 
@@ -45,6 +49,30 @@ def cmd_migrate_qq(args: argparse.Namespace) -> int:
             note = " (skipped — unavailable)" if source in report["skipped"] else ""
             lines.append(f"  {source}: {count}{note}")
         emit_result("\n".join(lines), json_mode=False)
+    return 0
+
+
+def cmd_migrate_store(args: argparse.Namespace) -> int:
+    stats = migrate_store(data_dir=args.data_dir, dry_run=args.dry_run)
+    report = {
+        "files_scanned": stats.files_scanned,
+        "records_converted": stats.records_converted,
+        "already_envelope": stats.already_envelope,
+        "files_rewritten": stats.files_rewritten,
+        "dry_run": args.dry_run,
+    }
+
+    if getattr(args, "json", False):
+        emit_result(report, json_mode=True)
+    else:
+        verb = "Would convert" if args.dry_run else "Converted"
+        emit_result(
+            f"{verb} {report['records_converted']} record(s) to Envelope format "
+            f"across {report['files_scanned']} file(s) "
+            f"({report['already_envelope']} already migrated, "
+            f"{report['files_rewritten']} file(s) rewritten).",
+            json_mode=False,
+        )
     return 0
 
 
@@ -104,6 +132,28 @@ def register(sub: argparse._SubParsersAction) -> None:
         help="Emit the per-source migration report as JSON to stdout.",
     )
     qq.set_defaults(func=cmd_migrate_qq)
+
+    store = targets.add_parser(
+        "store",
+        help="Upgrade an existing store's on-disk format (Record -> Envelope JSONL).",
+    )
+    store.add_argument(
+        "--data-dir",
+        default=None,
+        metavar="PATH",
+        help=("Store directory to migrate (default: EIDETIC_DATA_DIR, else " "~/.eidetic/memory)."),
+    )
+    store.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would change without writing anything.",
+    )
+    store.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the migration stats as JSON to stdout.",
+    )
+    store.set_defaults(func=cmd_migrate_store)
 
     # `migrate` with no target prints help instead of crashing.
     p.set_defaults(func=_require_target)

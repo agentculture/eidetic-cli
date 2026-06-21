@@ -280,8 +280,9 @@ def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
     )
     hit = [r for r in results if r.id == "sc1"]
     assert len(hit) == 1
-    # The stored record's score should be None (not 0.9)
-    # Note: search will set score during retrieval, so we check the raw file
+    # The stored record's score must not be persisted (score is query-time only).
+    # With the data_refinery adapter, score is never written to the envelope —
+    # it is absent from the raw JSONL entirely. Verify via the round-tripped record.
     import json as _json
     from pathlib import Path
 
@@ -290,7 +291,9 @@ def test_ingest_drops_caller_score(tmp_data_dir: str) -> None:
     assert len(jsonl_files) == 1
     lines = jsonl_files[0].read_text(encoding="utf-8").strip().splitlines()
     stored = _json.loads(lines[0])
-    assert stored["score"] is None
+    # score must not be present at all (adapter never persists it)
+    assert "score" not in stored
+    assert stored.get("metadata", {}).get("score") is None
 
 
 # --- t4 tests: created-date stamping + supersedes/links carrying ---
