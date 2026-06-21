@@ -1,23 +1,32 @@
-"""Tests for the one-shot store migration (Record JSONL -> Envelope JSONL)."""
+"""Tests for ``eidetic migrate store`` — delegated store migration (Record -> Envelope).
+
+The migration now delegates to data-refinery's store-migration endpoint
+(``data_refinery.store.migrate``): eidetic supplies only a record->Envelope
+transform and the store root, never a filesystem write path. These tests run
+against the real data-refinery files backend on a tmp dir, so they exercise the
+full delegation — transform, idempotency, atomic rewrite, and the error contract.
+"""
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 from data_refinery.store import Envelope
 
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
-from eidetic.memory.backend import record_from_envelope
-from eidetic.memory.migrate_store import _ensure_within, migrate_store
+from eidetic.memory.backend import (
+    _legacy_line_to_envelope,
+    migrate_store,
+    record_from_envelope,
+)
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
 
 def _record_line(rid: str, text: str) -> str:
-    """A legacy Record-format JSONL line (top-level ``text``)."""
+    """A legacy Record-format JSONL line (top-level ``text``, no ``content``)."""
     rec = Record(
         id=rid,
         text=text,
@@ -45,10 +54,12 @@ def test_migrate_converts_records_to_envelopes(tmp_path: Path) -> None:
     d = tmp_path / "memory"
     f = _seed(d)
 
-    stats = migrate_store(str(d))
-    assert stats.records_converted == 2
-    assert stats.files_rewritten == 1
-    assert stats.already_envelope == 0
+    report = migrate_store(str(d))
+    assert report["files"] == 1
+    assert report["migrated"] == 1
+    assert report["skipped"] == 0
+    assert report["migrated_files"] == ["notes__public.jsonl"]
+    assert report["dry_run"] is False
 
     lines = [json.loads(ln) for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == 2
@@ -70,10 +81,30 @@ def test_migrate_is_idempotent(tmp_path: Path) -> None:
     _seed(d)
     migrate_store(str(d))
 
-    stats2 = migrate_store(str(d))
-    assert stats2.records_converted == 0
-    assert stats2.files_rewritten == 0
-    assert stats2.already_envelope == 2
+    report2 = migrate_store(str(d))
+    assert report2["migrated"] == 0
+    assert report2["skipped"] == 1
+    assert report2["migrated_files"] == []
+
+
+def test_migrate_keeps_already_envelope_lines_verbatim(tmp_path: Path) -> None:
+    """A store already in Envelope format is a no-op.
+
+    data-refinery detects an already-canonical Envelope line and keeps it
+    verbatim — it never re-feeds it through eidetic's transform — so a second
+    migration is a byte-for-byte no-op.
+    """
+    d = tmp_path / "memory"
+    d.mkdir(parents=True)
+    f = d / "notes__public.jsonl"
+    env = _legacy_line_to_envelope(json.loads(_record_line("a", "already here")))
+    f.write_text(json.dumps(env.to_dict()) + "\n", encoding="utf-8")
+    before = f.read_text(encoding="utf-8")
+
+    report = migrate_store(str(d))
+    assert report["migrated"] == 0
+    assert report["skipped"] == 1
+    assert f.read_text(encoding="utf-8") == before  # byte-identical
 
 
 def test_migrate_dry_run_writes_nothing(tmp_path: Path) -> None:
@@ -83,31 +114,30 @@ def test_migrate_dry_run_writes_nothing(tmp_path: Path) -> None:
     original = _record_line("a", "first note") + "\n"
     f.write_text(original, encoding="utf-8")
 
-    stats = migrate_store(str(d), dry_run=True)
-    assert stats.records_converted == 1
-    assert stats.files_rewritten == 1  # would rewrite...
+    report = migrate_store(str(d), dry_run=True)
+    assert report["migrated"] == 1  # would rewrite...
+    assert report["dry_run"] is True
     assert f.read_text(encoding="utf-8") == original  # ...but disk is unchanged
 
 
 def test_migrate_missing_dir_is_noop(tmp_path: Path) -> None:
-    stats = migrate_store(str(tmp_path / "does-not-exist"))
-    assert stats.files_scanned == 0
-    assert stats.records_converted == 0
-    assert stats.files_rewritten == 0
+    """A non-existent store dir migrates nothing (no scope files to rewrite)."""
+    report = migrate_store(str(tmp_path / "does-not-exist"))
+    assert report["files"] == 0
+    assert report["migrated"] == 0
 
 
 def test_migrate_corrupt_record_fields_raises_cli_error(tmp_path: Path) -> None:
-    """A valid JSON line missing required Record fields must raise CliError(EXIT_ENV_ERROR).
+    """A valid JSON line missing required Record fields raises CliError(EXIT_ENV_ERROR).
 
-    ``Record.from_dict`` indexes ``data["text"]``, ``data["type"]``, ``data["scope"]``,
-    etc. directly, so a line like ``{"id": "x"}`` will raise ``KeyError``.  The
-    migration must catch that and re-raise as a structured :class:`CliError` — never
-    letting the raw ``KeyError`` traceback escape to stderr.
+    eidetic's transform (``Record.from_dict``) raises ``KeyError`` on a line
+    lacking ``scope``/``text``/etc.; data-refinery maps that to a structured
+    "corrupt line" CliError (code 2), and eidetic re-raises it as its own
+    CliError — never letting a raw traceback escape to stderr.
     """
     d = tmp_path / "memory"
     d.mkdir(parents=True)
     f = d / "notes__public.jsonl"
-    # Valid JSON but missing all required Record fields ("text", "type", "scope", …).
     f.write_text(json.dumps({"id": "x"}) + "\n", encoding="utf-8")
 
     with pytest.raises(CliError) as excinfo:
@@ -116,24 +146,11 @@ def test_migrate_corrupt_record_fields_raises_cli_error(tmp_path: Path) -> None:
     assert excinfo.value.code == EXIT_ENV_ERROR
 
 
-def test_ensure_within_accepts_path_inside_base(tmp_path: Path) -> None:
-    """A temp path that lives inside the (canonical) store dir is returned as-is."""
-    base = os.path.realpath(tmp_path)
-    inside = tmp_path / "notes__public.jsonl.tmp"
-    assert _ensure_within(base, inside) == Path(os.path.realpath(inside))
-
-
-def test_ensure_within_rejects_path_outside_base(tmp_path: Path) -> None:
-    """A target that canonicalises outside the store dir is refused with CliError.
-
-    Guards the operator-supplied data-dir trust boundary: a write can never be
-    redirected outside the resolved store directory.
-    """
-    base = os.path.realpath(tmp_path / "store")
-    (tmp_path / "store").mkdir()
-    escape = tmp_path / "store" / ".." / "elsewhere.jsonl.tmp"
-
-    with pytest.raises(CliError) as excinfo:
-        _ensure_within(base, escape)
-
-    assert excinfo.value.code == EXIT_ENV_ERROR
+def test_transform_maps_legacy_record_to_envelope() -> None:
+    """The consumer transform round-trips a legacy Record line into an Envelope."""
+    env = _legacy_line_to_envelope(json.loads(_record_line("a", "hello")))
+    assert isinstance(env, Envelope)
+    assert env.id == "a"
+    assert env.content == "hello"
+    rec = record_from_envelope(env)
+    assert rec.text == "hello" and rec.type == "note"

@@ -22,14 +22,15 @@ from typing import Any
 from eidetic.cli._commands.whoami import report
 from eidetic.cli._errors import CliError
 from eidetic.cli._output import emit_result
-from eidetic.memory.backend import get_backend
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend
 from eidetic.memory.stats import compute_stats
 
-# User-facing store labels. "graph" maps to the neo4j backend module — the
-# operator asked for "files | mongo | graph", so the CLI speaks "graph" while the
-# registry key stays "neo4j".
+# Store labels probed by default (no --backend): "graph" is the operator-preferred
+# display label for the neo4j store, so the default Store section reads
+# "files | mongo | graph". A driving agent may also pass "neo4j" explicitly
+# (issue #12) — both resolve to the same neo4j store via _LABEL_TO_BACKEND.
 _STORE_LABELS: tuple[str, ...] = ("files", "mongo", "graph")
-_LABEL_TO_BACKEND = {"files": "files", "mongo": "mongo", "graph": "neo4j"}
+_LABEL_TO_BACKEND = {"files": "files", "mongo": "mongo", "graph": "neo4j", "neo4j": "neo4j"}
 
 # Default server-selection / connection timeout for the store probe. Short by
 # design: `overview` shows store status on every call, so a down mongo/neo4j must
@@ -267,9 +268,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backend",
-        choices=list(_STORE_LABELS),
-        help="Narrow the Store section to one backend ('graph' is the neo4j store). "
-        "Default: all three (files/mongo/graph).",
+        choices=list(BACKEND_CHOICES),
+        help="Narrow the Store section to one backend ('graph' and 'neo4j' both "
+        "select the neo4j store). Default: files/mongo/graph.",
     )
     p.add_argument(
         "--scope",

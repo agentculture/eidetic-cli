@@ -23,8 +23,7 @@ import argparse
 
 from eidetic.cli._output import emit_result
 from eidetic.memory import migrate_qq
-from eidetic.memory.backend import get_backend
-from eidetic.memory.migrate_store import migrate_store
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend, migrate_store
 from eidetic.memory.scope import Scope
 
 
@@ -53,24 +52,18 @@ def cmd_migrate_qq(args: argparse.Namespace) -> int:
 
 
 def cmd_migrate_store(args: argparse.Namespace) -> int:
-    stats = migrate_store(data_dir=args.data_dir, dry_run=args.dry_run)
-    report = {
-        "files_scanned": stats.files_scanned,
-        "records_converted": stats.records_converted,
-        "already_envelope": stats.already_envelope,
-        "files_rewritten": stats.files_rewritten,
-        "dry_run": args.dry_run,
-    }
+    # eidetic constructs no write path — data-refinery owns the rewrite. The
+    # returned summary is file-granularity: {backend, files, migrated,
+    # migrated_files, skipped, dry_run}.
+    report = migrate_store(data_dir=args.data_dir, dry_run=args.dry_run)
 
     if getattr(args, "json", False):
         emit_result(report, json_mode=True)
     else:
-        verb = "Would convert" if args.dry_run else "Converted"
+        verb = "Would rewrite" if report["dry_run"] else "Rewrote"
         emit_result(
-            f"{verb} {report['records_converted']} record(s) to Envelope format "
-            f"across {report['files_scanned']} file(s) "
-            f"({report['already_envelope']} already migrated, "
-            f"{report['files_rewritten']} file(s) rewritten).",
+            f"{verb} {report['migrated']} of {report['files']} store file(s) "
+            f"to Envelope format ({report['skipped']} already current).",
             json_mode=False,
         )
     return 0
@@ -108,9 +101,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     qq.add_argument(
         "--backend",
-        choices=["files", "neo4j", "mongo"],
+        choices=list(BACKEND_CHOICES),
         default="files",
-        help="Destination memory backend (default: files).",
+        help="Destination memory backend (default: files; 'graph' is an alias for 'neo4j').",
     )
     qq.add_argument(
         "--scope",

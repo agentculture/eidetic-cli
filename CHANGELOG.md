@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-22
+
+### Added
+
+- `--backend` token is now uniform across every verb (`remember`/`recall`/`sweep`/`migrate`/`overview`): `files`, `mongo`, `neo4j`, or `graph`, where `graph` is an alias for `neo4j` (issue #12). A single backend token works everywhere.
+
+### Changed
+
+- `migrate store` now delegates the on-disk format upgrade to data-refinery's `store.migrate` endpoint (data-refinery-cli 0.6.x) — eidetic constructs no filesystem write path and carries no `pythonsecurity:S2083` sink (issue #8). Its `--json` report adopts data-refinery's file-granularity summary `{backend, files, migrated, migrated_files, skipped, dry_run}`.
+- Bumped the storage dependency pin to `data-refinery-cli[store]>=0.6,<0.7`.
+
+### Removed
+
+- Deleted `eidetic/memory/migrate_store.py` and its path-construction logic; the store rewrite now lives behind data-refinery's boundary.
+
 ## [0.8.0] - 2026-06-21
 
 ### Added
