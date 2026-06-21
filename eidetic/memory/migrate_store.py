@@ -13,6 +13,12 @@ through untouched, so re-running converts nothing — and **atomic per file**
 (write a sibling temp file, then :func:`os.replace`). It reuses the canonical
 :func:`eidetic.memory.backend.record_to_envelope` mapping so it can never drift
 from how the live store reads and writes. See issue #13.
+
+Atomicity is *per file*, not per store: files are processed sequentially, so an
+interrupted run leaves the store briefly in a mixed Record/Envelope state. That
+is safe to resume — the idempotency check completes the remaining files on a
+re-run — but **concurrent access during a migration is unsupported**; run it
+while the store is otherwise idle.
 """
 
 from __future__ import annotations

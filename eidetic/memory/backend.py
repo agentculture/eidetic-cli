@@ -35,7 +35,7 @@ from data_refinery.store import Scope as DRScope
 from eidetic.cli._errors import EXIT_ENV_ERROR, CliError
 from eidetic.memory.embed import EmbedClient
 from eidetic.memory.record import DATE_UNKNOWN, Record
-from eidetic.memory.scope import Scope
+from eidetic.memory.scope import Scope, can_serve
 from eidetic.memory.scoring import rank
 
 DEFAULT_BACKEND = "files"
@@ -238,6 +238,12 @@ class StoreBackend:
                 **self._kwargs,
             )
         candidates = [record_from_envelope(e) for e in envs]
+        # Defense in depth: data-refinery's list() already enforces scope
+        # visibility via its own can_serve, but re-applying eidetic's policy here
+        # makes the public/private no-leak invariant hold *in eidetic* regardless
+        # of the store's behavior — the invariant is security-critical, so it is
+        # enforced on both sides of the boundary.
+        candidates = [r for r in candidates if can_serve(scope, r.scope)]
         if filters:
             candidates = [
                 r for r in candidates if all(r.metadata.get(k) == v for k, v in filters.items())
