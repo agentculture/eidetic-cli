@@ -1,6 +1,8 @@
 [flake8]
-# Match black's line length so flake8 and black agree.
-max-line-length = 100
+# Lint threshold only: tolerate long lines (e.g. un-splittable string literals)
+# up to 300. black still *formats* at 100 (see pyproject.toml) — this just stops
+# E501 from flagging the occasional long line black can't wrap (e.g. a string).
+max-line-length = 300
 
 # E203: whitespace before ':' — conflicts with black's slice formatting.
 # W503: line break before binary operator — black does the opposite (W504-style).
