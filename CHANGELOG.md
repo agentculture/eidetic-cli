@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-06-20
+
+### Fixed
+
+- `overview` no longer crashes when a record carries a non-string `metadata.author`: `compute_stats` now only unions non-empty strings into the per-scope contributor set, so `sorted()` cannot raise `TypeError` on mixed types (found by colleague review on #10; preserves the always-on overview never-fail invariant)
+
 ## [0.7.0] - 2026-06-20
 
 ### Added
