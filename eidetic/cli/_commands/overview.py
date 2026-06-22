@@ -22,14 +22,15 @@ from typing import Any
 from eidetic.cli._commands.whoami import report
 from eidetic.cli._errors import CliError
 from eidetic.cli._output import emit_result
-from eidetic.memory.backend import get_backend
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend
 from eidetic.memory.stats import compute_stats
 
-# User-facing store labels. "graph" maps to the neo4j backend module — the
-# operator asked for "files | mongo | graph", so the CLI speaks "graph" while the
-# registry key stays "neo4j".
+# Store labels probed by default (no --backend): "graph" is the operator-preferred
+# display label for the neo4j store, so the default Store section reads
+# "files | mongo | graph". A driving agent may also pass "neo4j" explicitly
+# (issue #12) — `get_backend` resolves "graph"/"neo4j" to the same store, so the
+# probe site hands the label straight to it (no parallel label->backend map).
 _STORE_LABELS: tuple[str, ...] = ("files", "mongo", "graph")
-_LABEL_TO_BACKEND = {"files": "files", "mongo": "mongo", "graph": "neo4j"}
 
 # Default server-selection / connection timeout for the store probe. Short by
 # design: `overview` shows store status on every call, so a down mongo/neo4j must
@@ -137,7 +138,10 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
     """
     backend = None
     try:
-        backend = get_backend(_LABEL_TO_BACKEND[label], timeout_ms=_probe_timeout_ms())
+        # get_backend resolves the "graph" alias to neo4j (issue #12), so the
+        # label goes straight in; the probe's display "backend" field keeps the
+        # caller's label (see the return below).
+        backend = get_backend(label, timeout_ms=_probe_timeout_ms())
         records = backend.all()
         # Filtering + aggregation live INSIDE the try so a malformed record
         # (e.g. a None scope from a corrupt store) degrades to 'unavailable'
@@ -267,9 +271,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backend",
-        choices=list(_STORE_LABELS),
-        help="Narrow the Store section to one backend ('graph' is the neo4j store). "
-        "Default: all three (files/mongo/graph).",
+        choices=list(BACKEND_CHOICES),
+        help="Narrow the Store section to one backend ('graph' and 'neo4j' both "
+        "select the neo4j store). Default: files/mongo/graph.",
     )
     p.add_argument(
         "--scope",

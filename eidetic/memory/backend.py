@@ -40,7 +40,20 @@ from eidetic.memory.scoring import rank
 
 DEFAULT_BACKEND = "files"
 
+# The three real stores data-refinery resolves. "graph" is *not* here — it is a
+# CLI-facing alias for "neo4j" (see _BACKEND_ALIASES / BACKEND_CHOICES).
 _KNOWN_BACKENDS: set[str] = {"files", "mongo", "neo4j"}
+
+# CLI-facing aliases. "graph" is the operator-preferred display label for the
+# neo4j store; it resolves to the same backend. Kept so a single backend token
+# works on every verb (issue #12) without breaking existing "graph" usage.
+_BACKEND_ALIASES: dict[str, str] = {"graph": "neo4j"}
+
+# The accepted `--backend` tokens, exposed as ONE list so every verb's
+# `choices=` stays in lockstep — the duplicated, drifting per-verb choice lists
+# were the root cause of issue #12. Order is display order (real stores first,
+# then the alias).
+BACKEND_CHOICES: tuple[str, ...] = ("files", "mongo", "neo4j", "graph")
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +297,11 @@ def get_backend(name: str = DEFAULT_BACKEND, **kwargs: object) -> Backend:
     store-probe passes a short connect timeout so a down mongo/neo4j fails fast
     rather than blocking on the default server-selection timeout. Backends that
     don't accept it (files) ignore it.
+
+    The CLI alias ``graph`` resolves to ``neo4j`` (issue #12) before validation,
+    so every verb's ``--backend`` accepts the same token set.
     """
+    name = _BACKEND_ALIASES.get(name, name)
     if name not in _KNOWN_BACKENDS:
         raise CliError(
             code=EXIT_ENV_ERROR,
@@ -292,3 +309,55 @@ def get_backend(name: str = DEFAULT_BACKEND, **kwargs: object) -> Backend:
             remediation=f"available backends: {', '.join(sorted(_KNOWN_BACKENDS))}",
         )
     return StoreBackend(name, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Store migration — delegated to data-refinery (eidetic constructs no paths)
+# ---------------------------------------------------------------------------
+
+
+def _legacy_line_to_envelope(obj: dict[str, Any]) -> Envelope:
+    """Transform one decoded *legacy* Record-JSONL line into an :class:`Envelope`.
+
+    Handed to ``data_refinery.store.migrate`` as the consumer transform.
+    data-refinery only routes *legacy* lines here — an already-canonical Envelope
+    line is detected (``Envelope.from_dict(obj).to_dict() == obj``) and kept
+    verbatim, never re-fed through the transform — so this need not be idempotent
+    and need not recognise the Envelope shape itself. A legacy line carries a
+    top-level ``text`` (not ``content``), so it never round-trips as an Envelope
+    and always reaches this transform exactly once.
+
+    A malformed legacy line makes ``Record.from_dict`` raise ``KeyError`` (missing
+    a required field). data-refinery's migrate loop wraps that into a structured
+    "corrupt line" :class:`CliError` (exit 2), which :func:`migrate_store`'s
+    ``_translate_errors`` re-raises as eidetic's own — so no raw traceback ever
+    escapes. (Covered by ``test_migrate_corrupt_record_fields_raises_cli_error``.)
+    """
+    return record_to_envelope(Record.from_dict(obj))
+
+
+def migrate_store(data_dir: str | None = None, *, dry_run: bool = False) -> dict[str, Any]:
+    """Upgrade an on-disk *files* store from legacy Record-JSONL to Envelope-JSONL.
+
+    eidetic constructs **no filesystem write path**: it delegates the rewrite to
+    ``data_refinery.store.migrate``, supplying only the record->Envelope
+    transform and the store root it already owns (*data_dir*). data-refinery —
+    which owns the store layout — resolves paths, validates the whole store, and
+    rewrites **atomically per file**. This is what removed the Sonar S2083
+    write-path sink from eidetic (issue #8); the operation is **idempotent** (a
+    re-run rewrites nothing) and abort-safe, both guaranteed by data-refinery.
+
+    *data_dir* defaults (via :func:`_bridge_env`) to ``EIDETIC_DATA_DIR`` else
+    ``~/.eidetic/memory`` — the same store ``remember``/``recall`` use. Returns
+    data-refinery's summary dict ``{backend, files, migrated, migrated_files,
+    skipped, dry_run}``. data-refinery's :class:`CliError` is re-raised as
+    eidetic's own variant so callers never see a foreign exception.
+    """
+    _bridge_env("files")
+    with _translate_errors():
+        return drstore.migrate(
+            transform=_legacy_line_to_envelope,
+            backend="files",
+            base_dir=data_dir,
+            dry_run=dry_run,
+        )

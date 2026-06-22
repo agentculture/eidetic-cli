@@ -13,7 +13,7 @@ from typing import Any
 
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
-from eidetic.memory.backend import get_backend
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend
 from eidetic.memory.scope import Scope
 from eidetic.memory.scoring import signal_strength
 
@@ -178,9 +178,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backend",
-        choices=["files", "neo4j", "mongo"],
+        choices=list(BACKEND_CHOICES),
         default="files",
-        help="Storage backend to query (default: files).",
+        help="Storage backend to query (default: files; 'graph' is an alias for 'neo4j').",
     )
     p.add_argument(
         "--scope",

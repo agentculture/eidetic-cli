@@ -156,11 +156,11 @@ wheels = [
 
 [[package]]
 name = "data-refinery-cli"
-version = "0.5.2"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bb/92/9feb57e53b8270e20d98229f4befb1f301eb2c9eb8cfd413c3bcb558cf40/data_refinery_cli-0.5.2.tar.gz", hash = "sha256:7c9ba77a12344e243443d6074877f59e208d981431d464abef6136609b6bc532", size = 180618, upload-time = "2026-06-21T09:04:02.773Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/d6/a516aff96116890e33925ccd209ddd63e5d0c8d764f37647cb1ebeaba5d4/data_refinery_cli-0.6.0.tar.gz", hash = "sha256:73b98a88fa064bd158e2f8e302c4b0fd300430020d5b948d9b8105710e02c5ba", size = 194767, upload-time = "2026-06-21T17:44:32.265Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/54/2367fa22186ef4012fb2ac65d27cfedf8f31251dc705e870e2746696092c/data_refinery_cli-0.5.2-py3-none-any.whl", hash = "sha256:c2ba9c09534b2a49f196b30b999d251fa87c6701a31d2e22f2f1f7d0eb6b8439", size = 49984, upload-time = "2026-06-21T09:04:01.604Z" },
+    { url = "https://files.pythonhosted.org/packages/76/2c/02c2bf5c928a752776c837c05145e68c0fc5d6da69dea7e33f95043edf02/data_refinery_cli-0.6.0-py3-none-any.whl", hash = "sha256:a30d6ce2a60d5da81cf48da772e84f36a011f7588480d538fc5caa2d1c864bbd", size = 56078, upload-time = "2026-06-21T17:44:31.238Z" },
 ]
 
 [package.optional-dependencies]
@@ -180,7 +180,7 @@ wheels = [
 
 [[package]]
 name = "eidetic-cli"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "data-refinery-cli", extra = ["store"] },
@@ -199,7 +199,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "data-refinery-cli", extras = ["store"], specifier = ">=0.5.2,<0.6" }]
+requires-dist = [{ name = "data-refinery-cli", extras = ["store"], specifier = ">=0.6,<0.7" }]
 
 [package.metadata.requires-dev]
 dev = [

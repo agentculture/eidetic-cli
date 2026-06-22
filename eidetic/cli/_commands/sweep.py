@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from eidetic.cli._output import emit_result
-from eidetic.memory.backend import get_backend
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend
 from eidetic.memory.lifecycle import compute_transitions
 
 
@@ -74,9 +74,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backend",
-        choices=["files", "neo4j", "mongo"],
+        choices=list(BACKEND_CHOICES),
         default="files",
-        help="Memory backend to sweep (default: files).",
+        help="Memory backend to sweep (default: files; 'graph' is an alias for 'neo4j').",
     )
     p.add_argument(
         "--dry-run",

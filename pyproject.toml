@@ -1,6 +1,6 @@
 [project]
 name = "eidetic-cli"
-version = "0.8.0"
+version = "0.9.0"
 description = "Agent/CLI providing eidetic perfect-recall memory"
 readme = "README.md"
 license = "MIT"
@@ -18,8 +18,10 @@ classifiers = [
 # KV + data-quality layer and keeps only the memory semantics (schema, recall
 # ranking, scoring, freshness signal, lifecycle). The `[store]` extra transitively
 # provides neo4j + pymongo for the mongo/neo4j backends and migrate_qq's legacy
-# source reads. Pinned to contract version 2 (data-refinery-cli 0.5.x).
-dependencies = ["data-refinery-cli[store]>=0.5.2,<0.6"]
+# source reads. 0.6.x adds the store-migration endpoint (`data_refinery.store.migrate`)
+# that `eidetic migrate store` delegates to, so eidetic constructs no write paths
+# itself (issue #8). Pinned to the 0.6.x line.
+dependencies = ["data-refinery-cli[store]>=0.6,<0.7"]
 
 [project.urls]
 Homepage = "https://github.com/agentculture/eidetic-cli"

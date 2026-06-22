@@ -91,10 +91,10 @@ records, a per-backend breakdown (files / mongo / graph), per-scope counts (name
 visibility + lifecycle), each backend's live/unavailable **status**, and
 `link-connections` — the count of link/`supersedes` *references* summed across
 records, **not** graph edges (neo4j stores these as node properties). Narrow with
-`--backend {files,mongo,graph}` (one store; `graph` is neo4j) or `--scope NAME`
-(one scope). A backend that is down degrades to an `unavailable` line via a fast
-status probe — `overview` still exits 0. (`cli overview` describes the CLI surface
-and does not touch the store.)
+`--backend {files,mongo,neo4j,graph}` (one store; `graph` and `neo4j` both select
+the neo4j store) or `--scope NAME` (one scope). A backend that is down degrades to
+an `unavailable` line via a fast status probe — `overview` still exits 0.
+(`cli overview` describes the CLI surface and does not touch the store.)
 
 ### Contributors per scope
 
@@ -146,8 +146,8 @@ argument, or NDJSON from stdin for bulk ingest. Each record is upserted
 
 ## Flags
 
-- `--backend` — memory backend to use: `files`, `neo4j`, or `mongo` (default:
-  `files`).
+- `--backend` — memory backend to use: `files`, `mongo`, `neo4j`, or `graph`
+  (`graph` is an alias for `neo4j`; default: `files`).
 - `--scope` — scope name for the record(s) (default: `default`).
 - `--visibility` — record visibility: `public` or `private` (default: `public`).
 - `--added-by` — override the agent identity stamped on ingested records.
@@ -206,8 +206,8 @@ the configured scope and visibility, with no private-to-public leak.
 - `--case-sensitive` — only used by `--mode exact`; require matching case.
 - `--top-k` — maximum number of results to return (default: 5).
 - `--filter KEY=VALUE` — metadata facet filter; repeatable.
-- `--backend` — storage backend to query: `files`, `neo4j`, or `mongo` (default:
-  `files`).
+- `--backend` — storage backend to query: `files`, `mongo`, `neo4j`, or `graph`
+  (`graph` is an alias for `neo4j`; default: `files`).
 - `--scope` — query scope name (default: `default`).
 - `--visibility` — query scope visibility: `public` or `private` (default:
   `public`).
@@ -251,8 +251,8 @@ whose `lifecycle` changed. It never deletes — it only ever flips `lifecycle` t
 
 ## Flags
 
-- `--backend` — memory backend to sweep: `files`, `neo4j`, or `mongo` (default:
-  `files`).
+- `--backend` — memory backend to sweep: `files`, `mongo`, `neo4j`, or `graph`
+  (`graph` is an alias for `neo4j`; default: `files`).
 - `--dry-run` — report transitions without writing any change.
 - `--json` — emit structured JSON output.
 """
@@ -289,21 +289,23 @@ configurable.
 ## migrate store
 
 A one-shot, **idempotent** in-place upgrade of an existing store from the legacy
-Record-format JSONL to data-refinery's Envelope-format JSONL (issue #13). eidetic
-no longer owns its storage engine — data-refinery's files backend reads opaque
-Envelopes — so a store written by an older eidetic is remapped once before the
-new reader can interpret it. Already-migrated lines pass through untouched, so
-re-running converts nothing. Reports `files_scanned`, `records_converted`,
-`already_envelope`, and `files_rewritten`; `--dry-run` reports the same counts
-but writes nothing; `--data-dir` overrides the store location (default:
-`EIDETIC_DATA_DIR`, else `~/.eidetic/memory`).
+Record-format JSONL to data-refinery's Envelope-format JSONL (issues #13, #8).
+eidetic no longer owns its storage engine **and constructs no filesystem write
+path**: it delegates the rewrite to data-refinery's `store.migrate` endpoint,
+supplying only a record->Envelope transform and the store root it already owns.
+data-refinery — which owns the store layout — resolves paths, validates the whole
+store, and rewrites **atomically per file**. Already-migrated lines pass through
+untouched, so re-running converts nothing. Reports data-refinery's file-granularity
+summary `{backend, files, migrated, migrated_files, skipped, dry_run}`; `--dry-run`
+reports the same counts but writes nothing; `--data-dir` overrides the store
+location (default: `EIDETIC_DATA_DIR`, else `~/.eidetic/memory`).
 
 ## migrate qq flags
 
 - `--file PATH` — QQ markdown source to read (repeatable; defaults to the known
   `core.md`/`notes.md` paths).
-- `--backend` — destination backend: `files`, `neo4j`, `mongo` (default:
-  `files`).
+- `--backend` — destination backend: `files`, `mongo`, `neo4j`, or `graph`
+  (`graph` is an alias for `neo4j`; default: `files`).
 - `--scope` — destination scope name (default: `qq`).
 - `--visibility` — destination scope visibility: `public` or `private`
   (default: `private`).

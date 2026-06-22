@@ -40,6 +40,7 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `recall <query>` | Search the store — top-k hits with text + full metadata + `score` + `signal`; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Lifecycle flags: `--include-shadowed`, `--include-archived` (both excluded by default). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. |
 | `sweep` | Apply lifecycle transitions (shadow/archive) across the whole store — never deletes, only flips `lifecycle`. Supports `--dry-run`. |
 | `migrate qq` | One-shot idempotent import of legacy QQ memory (core.md/notes.md, MongoDB, Neo4j) into a private scope. |
+| `migrate store` | One-shot idempotent upgrade of an on-disk store from legacy Record-JSONL to Envelope-JSONL. Delegates the rewrite to data-refinery's `store.migrate` endpoint — eidetic constructs no filesystem write path. `--dry-run`/`--data-dir`. |
 | `cli overview` | Describe the CLI surface itself. |
 
 Every command supports `--json`. Results go to stdout, errors/diagnostics to
@@ -49,7 +50,7 @@ error, `3+` reserved.
 ## Storage
 
 The `files` backend (default) is self-contained — JSONL on disk, no services
-needed. For the `mongo` / `neo4j` (graph) backends, the storage stack is owned and
+needed. For the `mongo` / `neo4j` backends, the storage stack is owned and
 published by [data-refinery-cli](https://github.com/agentculture/data-refinery-cli)
 as the GHCR image `ghcr.io/agentculture/data-refinery-stack`. Bring it up with:
 
@@ -58,11 +59,18 @@ data-refinery stack up              # mongo on host :27018, neo4j bolt :7687 / U
 eidetic remember --backend mongo …  # eidetic's default connection settings already match
 ```
 
-eidetic depends on `data-refinery-cli[store]` (contract v2) and imports
+The `--backend` token is uniform across every verb: `files`, `mongo`, `neo4j`,
+or `graph` (`graph` is an alias for `neo4j`, kept as the operator-preferred
+display label) — so a driving agent can reuse one token everywhere.
+
+eidetic depends on `data-refinery-cli[store]` (0.6.x) and imports
 `data_refinery.store` / `data_refinery.quality` for storage operations. It keeps
 all memory semantics — the record schema, recall ranking modes, scoring, freshness
 signal, and no-hard-delete lifecycle — while the storage substrate is owned by
-data-refinery-cli. (Migration tracked in eidetic#13 / data-refinery-cli#1.)
+data-refinery-cli. Storage mechanics never cross the boundary: even the on-disk
+format upgrade (`migrate store`) is delegated to data-refinery's `store.migrate`
+endpoint, so eidetic constructs no filesystem write path of its own. (Migration
+tracked in eidetic#13 / data-refinery-cli#1; the migrate endpoint in #8.)
 
 Embeddings + rerank come from a separate model-gear HTTP endpoint
 (`EIDETIC_EMBED_URL`, `EIDETIC_EMBED_MODEL` — default

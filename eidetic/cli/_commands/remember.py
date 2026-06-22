@@ -16,7 +16,7 @@ from typing import Any
 from eidetic.cli._commands.whoami import find_culture_yaml, read_agent_fields
 from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_result
-from eidetic.memory.backend import get_backend
+from eidetic.memory.backend import BACKEND_CHOICES, get_backend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
@@ -182,9 +182,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backend",
-        choices=["files", "neo4j", "mongo"],
+        choices=list(BACKEND_CHOICES),
         default="files",
-        help="Memory backend to use (default: files).",
+        help="Memory backend to use (default: files; 'graph' is an alias for 'neo4j').",
     )
     p.add_argument(
         "--scope",
