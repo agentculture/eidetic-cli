@@ -28,9 +28,9 @@ from eidetic.memory.stats import compute_stats
 # Store labels probed by default (no --backend): "graph" is the operator-preferred
 # display label for the neo4j store, so the default Store section reads
 # "files | mongo | graph". A driving agent may also pass "neo4j" explicitly
-# (issue #12) — both resolve to the same neo4j store via _LABEL_TO_BACKEND.
+# (issue #12) — `get_backend` resolves "graph"/"neo4j" to the same store, so the
+# probe site hands the label straight to it (no parallel label->backend map).
 _STORE_LABELS: tuple[str, ...] = ("files", "mongo", "graph")
-_LABEL_TO_BACKEND = {"files": "files", "mongo": "mongo", "graph": "neo4j", "neo4j": "neo4j"}
 
 # Default server-selection / connection timeout for the store probe. Short by
 # design: `overview` shows store status on every call, so a down mongo/neo4j must
@@ -138,7 +138,10 @@ def _probe_backend(label: str, scope_filter: str | None) -> dict[str, Any]:
     """
     backend = None
     try:
-        backend = get_backend(_LABEL_TO_BACKEND[label], timeout_ms=_probe_timeout_ms())
+        # get_backend resolves the "graph" alias to neo4j (issue #12), so the
+        # label goes straight in; the probe's display "backend" field keeps the
+        # caller's label (see the return below).
+        backend = get_backend(label, timeout_ms=_probe_timeout_ms())
         records = backend.all()
         # Filtering + aggregation live INSIDE the try so a malformed record
         # (e.g. a None scope from a corrupt store) degrades to 'unavailable'

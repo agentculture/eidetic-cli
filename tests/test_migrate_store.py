@@ -127,6 +127,59 @@ def test_migrate_missing_dir_is_noop(tmp_path: Path) -> None:
     assert report["migrated"] == 0
 
 
+def test_migrate_empty_dir_is_noop(tmp_path: Path) -> None:
+    """An existing but empty store dir migrates nothing (no scope files present)."""
+    d = tmp_path / "memory"
+    d.mkdir(parents=True)
+    report = migrate_store(str(d))
+    assert report["files"] == 0
+    assert report["migrated"] == 0
+
+
+def test_migrate_mixed_record_and_envelope_in_one_file(tmp_path: Path) -> None:
+    """A single scope file holding BOTH a legacy Record line and an already-Envelope
+    line converts only the legacy one — data-refinery's per-line detection keeps the
+    canonical line verbatim."""
+    d = tmp_path / "memory"
+    d.mkdir(parents=True)
+    f = d / "notes__public.jsonl"
+    env = _legacy_line_to_envelope(json.loads(_record_line("kept", "already envelope")))
+    f.write_text(
+        _record_line("legacy", "convert me") + "\n" + json.dumps(env.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+
+    report = migrate_store(str(d))
+    assert report["migrated"] == 1  # the one file changed (it held a legacy line)
+
+    out = [json.loads(ln) for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(out) == 2
+    assert all("content" in o and "text" not in o for o in out)  # both Envelope-shaped now
+    by_id = {record_from_envelope(Envelope.from_dict(o)).id: o for o in out}
+    assert set(by_id) == {"legacy", "kept"}
+
+
+def test_migrate_uses_eidetic_data_dir_when_no_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no explicit data_dir, migrate_store targets EIDETIC_DATA_DIR — the same
+    store remember/recall use (via the DR_DATA_DIR env bridge), not data-refinery's
+    own default. Guards the base_dir=None + env-bridge interaction."""
+    d = tmp_path / "memory"
+    _seed(d)
+    monkeypatch.setenv("EIDETIC_DATA_DIR", str(d))
+
+    report = migrate_store()  # no data_dir argument
+    assert report["files"] == 1
+    assert report["migrated"] == 1
+    # the EIDETIC_DATA_DIR store was rewritten in place
+    assert all(
+        "content" in json.loads(ln)
+        for ln in (d / "notes__public.jsonl").read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    )
+
+
 def test_migrate_corrupt_record_fields_raises_cli_error(tmp_path: Path) -> None:
     """A valid JSON line missing required Record fields raises CliError(EXIT_ENV_ERROR).
 

@@ -326,6 +326,12 @@ def _legacy_line_to_envelope(obj: dict[str, Any]) -> Envelope:
     and need not recognise the Envelope shape itself. A legacy line carries a
     top-level ``text`` (not ``content``), so it never round-trips as an Envelope
     and always reaches this transform exactly once.
+
+    A malformed legacy line makes ``Record.from_dict`` raise ``KeyError`` (missing
+    a required field). data-refinery's migrate loop wraps that into a structured
+    "corrupt line" :class:`CliError` (exit 2), which :func:`migrate_store`'s
+    ``_translate_errors`` re-raises as eidetic's own — so no raw traceback ever
+    escapes. (Covered by ``test_migrate_corrupt_record_fields_raises_cli_error``.)
     """
     return record_to_envelope(Record.from_dict(obj))
 
