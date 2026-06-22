@@ -275,6 +275,9 @@ with the remaining sources.
 
 Stable per-source ids make re-runs idempotent (upsert by id, never duplicate):
 `qq-file:<path>#<section-slug>`, `qq-mongo:<note_id>`, `qq-neo4j:<entity_id>`.
+Within one file, duplicate headings that slug identically are disambiguated —
+the first keeps the bare slug, later ones get a `-2`/`-3` suffix — so a repeated
+`## ` heading never makes one section silently overwrite another.
 Provenance + a date signature ride along in `metadata` and `created`
 (file mtime / Mongo `last_accessed` / Neo4j `last_seen`, falling back to the
 decay-neutral date-unknown sentinel).

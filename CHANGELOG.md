@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-06-23
+
+### Fixed
+
+- migrate qq: duplicate ## headings in one file (e.g. two "## Ongoing Threads") no longer slug-collide on the same id and silently overwrite each other. The first occurrence keeps the bare slug; later ones get a deterministic -2/-3 suffix, so every section is preserved as a distinct record. Recovered a 128 KB section that was previously dropped on import.
+
 ## [0.9.0] - 2026-06-22
 
 ### Added

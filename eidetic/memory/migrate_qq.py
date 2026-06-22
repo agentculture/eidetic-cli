@@ -55,6 +55,24 @@ def _slug(text: str) -> str:
     return cleaned or "section"
 
 
+def _unique_slug(text: str, used: set[str]) -> str:
+    """Return :func:`_slug` for *text*, made unique against *used* (mutated).
+
+    Within one file, duplicate headings (or headings that slug identically)
+    would otherwise yield colliding ids. The first occurrence keeps the bare
+    slug; each later collision gets the lowest free ``-N`` suffix (N>=2). The
+    walk is deterministic (top-to-bottom), so re-runs reproduce the same ids.
+    """
+    base = _slug(text)
+    candidate = base
+    n = 1
+    while candidate in used:
+        n += 1
+        candidate = f"{base}-{n}"
+    used.add(candidate)
+    return candidate
+
+
 # --------------------------------------------------------------------------- #
 # Files reader
 # --------------------------------------------------------------------------- #
@@ -110,10 +128,18 @@ def read_files(
             created = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
         except OSError:
             created = DATE_UNKNOWN
+        # Two ## sections in one file can slug-collide (e.g. duplicate
+        # "## Ongoing Threads" headings). Their ids would be identical and the
+        # idempotent upsert would silently drop all but the last — losing the
+        # other section's content. Disambiguate per file: the first occurrence
+        # keeps the bare slug (so existing migrated ids stay stable across
+        # re-runs), later occurrences get a deterministic "-2", "-3", ... suffix.
+        used: set[str] = set()
         for title, body in _iter_sections(text):
             if not body:
                 continue
-            yield _map_file_section(raw_path, title, body, created, scope)
+            slug = _unique_slug(title, used)
+            yield _map_file_section(raw_path, title, body, created, scope, slug)
 
 
 def _map_file_section(
@@ -122,8 +148,9 @@ def _map_file_section(
     body: str,
     created: str,
     scope: Scope,
+    slug: str,
 ) -> Record:
-    rid = f"qq-file:{path}#{_slug(section)}"
+    rid = f"qq-file:{path}#{slug}"
     metadata: dict[str, Any] = {
         "source": SRC_FILES,
         "path": path,
