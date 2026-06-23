@@ -23,6 +23,7 @@ data-refinery. See issue #13 for the migration context.
 from __future__ import annotations
 
 import os
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Protocol
@@ -120,6 +121,88 @@ def _bridge_env(name: str) -> None:
         neo4j_uri = os.environ.get("NEO4J_URI")
         if neo4j_uri:
             os.environ["DR_NEO4J_URI"] = neo4j_uri
+
+
+# ---------------------------------------------------------------------------
+# Store-path resolver helpers
+# ---------------------------------------------------------------------------
+
+# Module-level cache keyed by cwd for _git_toplevel.
+_GIT_CACHE: dict[str, str | None] = {}
+
+
+def _home_store_dir() -> str:
+    """Return the default home-based store directory path."""
+    return str(Path.home() / ".eidetic" / "memory")
+
+
+def _override_dir() -> str | None:
+    """Return the explicit ``EIDETIC_DATA_DIR`` override, or ``None``."""
+    return os.environ.get("EIDETIC_DATA_DIR") or None
+
+
+def _git_toplevel() -> str | None:
+    """Return the git repo toplevel for the current working directory.
+
+    Returns ``None`` when outside a repo, git is unavailable, or any error
+    occurs. Never raises. Results are cached per-cwd so a batch ingest
+    spawns at most one git subprocess, while ``os.chdir`` to a different
+    directory gets a fresh result.
+    """
+    cwd = os.getcwd()
+    if cwd in _GIT_CACHE:
+        return _GIT_CACHE[cwd]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            _GIT_CACHE[cwd] = result.stdout.strip()
+            return _GIT_CACHE[cwd]
+        _GIT_CACHE[cwd] = None
+        return None
+    except FileNotFoundError:
+        _GIT_CACHE[cwd] = None
+        return None
+
+
+def _resolve_write_dir(visibility: str) -> str:
+    """Resolve the write directory for a record with the given *visibility*.
+
+    Precedence:
+    1. ``EIDETIC_DATA_DIR`` override (if set)
+    2. Repo ``.eidetic/memory`` for public records inside a git repo
+    3. Home ``~/.eidetic/memory`` (private records, or outside a repo)
+    """
+    override = _override_dir()
+    if override:
+        return override
+    if visibility == "public":
+        top = _git_toplevel()
+        if top:
+            return str(Path(top) / ".eidetic" / "memory")
+    return _home_store_dir()
+
+
+def _candidate_read_dirs() -> list[str]:
+    """Return the list of directories to search for multi-store reads.
+
+    When ``EIDETIC_DATA_DIR`` is set, returns a single-element list
+    (byte-identical to today's behaviour). Otherwise returns home plus
+    the repo store (if inside a git repo), with no duplicates.
+    """
+    override = _override_dir()
+    if override:
+        return [override]
+    dirs: list[str] = [_home_store_dir()]
+    top = _git_toplevel()
+    if top:
+        repo = str(Path(top) / ".eidetic" / "memory")
+        if repo not in dirs:
+            dirs.append(repo)
+    return dirs
 
 
 # ---------------------------------------------------------------------------
