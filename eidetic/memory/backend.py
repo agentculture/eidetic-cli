@@ -335,6 +335,12 @@ class StoreBackend:
         """
         if self._name == "files":
             # Gather candidates from every dir in _candidate_read_dirs(), union by id.
+            # Dedup is first-dir-wins (home is listed before repo): if the SAME id
+            # exists in both stores at different visibilities (an ill-defined state —
+            # upsert routes a given id to exactly one store by its visibility), the
+            # home copy wins. This can only ever *under*-serve such a duplicate (the
+            # later copy is dropped); it can never leak, because the surviving copy is
+            # still gated by can_serve below.
             seen: dict[str, Record] = {}
             for d in _candidate_read_dirs():
                 _bridge_env("files", data_dir=d)
