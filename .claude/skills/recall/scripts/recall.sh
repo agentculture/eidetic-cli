@@ -136,12 +136,14 @@ if ! has_flag --scope "$@"; then
     if [ -n "$EIDETIC_SCOPE" ]; then
         SCOPE_ARGS+=(--scope "$EIDETIC_SCOPE")
         has_flag --visibility "$@" || SCOPE_ARGS+=(--visibility private)
-    else
-        # No suffix resolved (no culture.yaml / unparseable): warn that the
-        # query runs against the public default scope rather than this agent's
-        # private personal scope, so an empty result isn't silently misread.
-        # stderr keeps stdout clean for --json. Pass --scope/--visibility to silence.
-        printf 'warning: no culture.yaml suffix resolved; querying the eidetic default scope (public) instead of a private personal scope. Pass --scope/--visibility to control this.\n' >&2
+    elif ! has_flag --visibility "$@"; then
+        # No suffix AND no explicit --visibility: the query runs against
+        # eidetic's own default (scope=default, visibility=public), not this
+        # agent's private personal scope — so an empty result isn't silently
+        # misread. Warn on stderr (stdout stays clean for --json). Warn ONLY
+        # here: an explicit --scope (outer guard) or --visibility (this guard) is
+        # a deliberate choice, honored verbatim, so either flag silences this.
+        printf 'warning: no culture.yaml suffix resolved; querying the public default scope rather than a private personal scope. Pass --scope or --visibility to target deliberately.\n' >&2
     fi
 fi
 

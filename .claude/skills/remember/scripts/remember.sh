@@ -141,12 +141,14 @@ if ! has_flag --scope "$@"; then
     if [ -n "$EIDETIC_SCOPE" ]; then
         SCOPE_ARGS+=(--scope "$EIDETIC_SCOPE")
         has_flag --visibility "$@" || SCOPE_ARGS+=(--visibility private)
-    else
-        # No suffix resolved (no culture.yaml / unparseable): don't silently
-        # downgrade an expected-private record to the public default scope —
-        # warn on stderr (stdout stays clean for --json) and let eidetic apply
-        # its default. Pass --scope/--visibility to silence this.
-        printf 'warning: no culture.yaml suffix resolved; using the eidetic default scope (public) instead of a private personal scope. Pass --scope/--visibility to control placement.\n' >&2
+    elif ! has_flag --visibility "$@"; then
+        # No suffix AND no explicit --visibility: the record falls back to
+        # eidetic's own default (scope=default, visibility=public). Don't let an
+        # expected-private record go public silently — warn on stderr (stdout
+        # stays clean for --json). Warn ONLY here: an explicit --scope (outer
+        # guard) or --visibility (this guard) means the caller chose deliberately
+        # and is honored verbatim, so either flag silences this.
+        printf 'warning: no culture.yaml suffix resolved; this record falls back to the public default scope. Pass --scope or --visibility to place it deliberately.\n' >&2
     fi
 fi
 

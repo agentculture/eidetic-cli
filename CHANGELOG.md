@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Scope resolution no longer silently downgrades an expected-private record to the public default scope: when no culture.yaml suffix resolves, a single warning is written to stderr (stdout stays clean for --json) (FIX-5).
+- Scope resolution no longer silently downgrades an expected-private record to the public default scope: when no culture.yaml suffix resolves *and* the caller passed neither --scope nor --visibility, a single accurate warning is written to stderr (stdout stays clean for --json); passing either flag is a deliberate choice, honored verbatim, and silences the warning (FIX-5).
 - recall.sh: the bareword query `help` is now a real search term (only -h/--help print usage), and a missing query is a hint:+non-zero error instead of exiting 0 (FIX-6).
 
 ### Fixed
