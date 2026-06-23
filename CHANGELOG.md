@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-06-23
+
+### Changed
+
+- remember/recall skill wrappers now default --scope to this agent's mesh identity (culture.yaml suffix, e.g. eidetic-cli) paired with --visibility private, so a record this agent remembers lands in its own isolated personal scope instead of the global default/public scope. An explicit --scope steers elsewhere; --visibility public keeps the personal scope but shares it; a wheel install with no culture.yaml falls back to the CLI default. CLI contract is unchanged (skill-wrapper defaults only).
+
 ## [0.9.1] - 2026-06-23
 
 ### Fixed

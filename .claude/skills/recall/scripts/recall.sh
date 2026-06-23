@@ -73,6 +73,60 @@ esac
 
 resolve_eidetic || exit 2
 
+# ── default to this agent's PERSONAL, PRIVATE scope (culture.yaml `suffix`) ──
+# Query this agent's OWN personal scope by default, matching where /remember
+# writes, instead of the global `default` scope shared by every project on this
+# host. We read the `suffix` from the nearest culture.yaml (walking up from this
+# script), so the scope follows the repo identity rather than being hard-coded —
+# a downstream cite-don't-import copy adapts to its own suffix, and the colleague
+# backend (running in a worktree of this same repo) resolves the same suffix,
+# keeping the Claude↔colleague shared-memory story intact.
+#
+# The personal scope is PRIVATE by default to match /remember: in eidetic's model
+# a private record is served only to a recall in the SAME scope (`can_serve`), so
+# querying with --scope <suffix> --visibility private is what retrieves those
+# isolated records (a public/default recall can't see them). Scope and visibility
+# are paired — the private default applies only when we inject the resolved scope,
+# and only if the caller didn't pass --visibility (so an explicit
+# `--visibility public` still wins). An explicit --scope on the command line takes
+# over steering entirely; a wheel install with no culture.yaml falls back to the
+# plain CLI default (`default`/`public`).
+resolve_scope() {
+    local dir suffix=""
+    dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+        if [ -f "$dir/culture.yaml" ]; then
+            suffix=$(sed -n \
+                's/^[[:space:]]*-\{0,1\}[[:space:]]*suffix:[[:space:]]*//p' \
+                "$dir/culture.yaml" | head -n1 | tr -d "[:space:]\"'")
+            break
+        fi
+        dir=$(dirname "$dir")
+    done
+    printf '%s' "$suffix"
+}
+
+has_flag() {
+    local needle=$1
+    shift
+    local a
+    for a in "$@"; do
+        case "$a" in
+            "$needle" | "$needle"=*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+SCOPE_ARGS=()
+if ! has_flag --scope "$@"; then
+    EIDETIC_SCOPE=$(resolve_scope)
+    if [ -n "$EIDETIC_SCOPE" ]; then
+        SCOPE_ARGS+=(--scope "$EIDETIC_SCOPE")
+        has_flag --visibility "$@" || SCOPE_ARGS+=(--visibility private)
+    fi
+fi
+
 # Default the embedding endpoint to the local model-gear embed gear. eidetic
 # falls back to a deterministic offline embedding if it's unreachable, so this
 # is safe even when the gear is down. Override by exporting these yourself.
@@ -80,4 +134,4 @@ resolve_eidetic || exit 2
 : "${EIDETIC_EMBED_MODEL:=Qwen/Qwen3-Embedding-0.6B}"
 export EIDETIC_EMBED_URL EIDETIC_EMBED_MODEL
 
-exec "${EIDETIC[@]}" recall "$@"
+exec "${EIDETIC[@]}" recall "${SCOPE_ARGS[@]}" "$@"

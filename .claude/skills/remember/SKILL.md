@@ -9,11 +9,15 @@ description: >
   Stamps a `created` date on every record at ingest time. Accepts `supersedes`
   (id of the record this one replaces, for within-scope shadowing via `sweep`)
   and `links` (list of related-memory ids). The store lives at
-  ~/.eidetic/memory (a home-dir path outside any git worktree), so what Claude
-  remembers, the colleague backend can recall (and vice versa). Use when the
-  user says "remember this", "store this", "save to memory", "index these",
-  "eidetic remember", or when something learned this session should outlive it.
-  Public data only. Pairs with the sibling /recall skill.
+  ~/.eidetic/memory (a home-dir path outside any git worktree), and the wrapper
+  defaults records to this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli
+  --visibility private`, suffix read from culture.yaml) so they don't leak to a
+  default/other-scope recall — Claude and the colleague backend still share them
+  because both resolve the same suffix via this skill. Pass `--visibility public`
+  to contribute to the shared public pool instead. Use when the user says
+  "remember this", "store this", "save to memory", "index these", "eidetic
+  remember", or when something learned this session should outlive it. Pairs with
+  the sibling /recall skill.
 ---
 
 # remember — write to the shared eidetic memory
@@ -54,8 +58,12 @@ The wrapper resolves the CLI portably (installed `eidetic` on `PATH`, else
 | `supersedes` | optional | id of an earlier same-scope record this one replaces; `sweep` auto-shadows the target |
 | `links` | optional | list of related-memory ids; persisted for future corroboration scoring |
 
-`score` and `signal` are recall-only and are ignored on ingest. **Public data
-only** — never remember private/role-gated content into the shared store.
+`score` and `signal` are recall-only and are ignored on ingest. **Mind the
+scope:** the default personal scope is **private** (`--scope eidetic-cli
+--visibility private`), so personal/role-gated notes stay isolated to this
+agent's recall and are safe to store. Only when you deliberately write to a
+**public** scope (`--visibility public`) does the record enter the shared pool
+visible to every scope — keep public-scope records to public data only.
 
 ## Idempotency
 
@@ -81,8 +89,14 @@ eidetic sweep             # apply transitions
 ## Flags (forwarded to `eidetic remember`)
 
 - `--json` — structured result (`{"upserted": N, "ids": [...]}`) to stdout.
-- `--scope NAME` / `--visibility public|private` — record scope (default
-  `default`/`public`). Private records are served only to a query in the same scope.
+- `--scope NAME` / `--visibility public|private` — record scope. **The wrapper
+  defaults this to the agent's PERSONAL, PRIVATE scope** — `--scope <suffix>
+  --visibility private`, where `<suffix>` is read from the nearest `culture.yaml`
+  (here, `eidetic-cli`). Private records are served only to a recall in the same
+  scope, so they don't leak to a `default`/other-scope query. Pass `--scope` to
+  steer to a different scope (which then uses the plain CLI default visibility),
+  or `--visibility public` to keep the personal scope but make it shared. A wheel
+  install with no `culture.yaml` falls back to the CLI default `default`/`public`.
 - `--backend files|mongo|neo4j` — default `files` (the shared home-dir store);
   use `mongo`/`neo4j` (with `EIDETIC_MONGO_URI` / `NEO4J_URI`) for a server store.
 
