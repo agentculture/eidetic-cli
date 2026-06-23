@@ -9,7 +9,7 @@ description: >
   Stamps a `created` date on every record at ingest time. Accepts `supersedes`
   (id of the record this one replaces, for within-scope shadowing via `sweep`)
   and `links` (list of related-memory ids). The store lives at
-  ~/.eidetic/memory (a home-dir path outside any git worktree), and the wrapper
+  $HOME/.eidetic/memory (a home-dir path outside any git worktree), and the wrapper
   defaults records to this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli
   --visibility private`, suffix read from culture.yaml) so they don't leak to a
   default/other-scope recall — Claude and the colleague backend still share them
@@ -25,7 +25,7 @@ description: >
 `remember` drives **`eidetic remember`**, the write half of the memory surface
 (the read half is the sibling **/recall** skill). Records you store here are
 recallable later by *any* agent on this machine — Claude or the colleague
-backend — because the default store is one shared `~/.eidetic/memory` path.
+backend — because the default store is one shared `$HOME/.eidetic/memory` path.
 
 ## How to run
 
