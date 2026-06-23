@@ -96,9 +96,13 @@ resolve_scope() {
     dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     while [ -n "$dir" ] && [ "$dir" != "/" ]; do
         if [ -f "$dir/culture.yaml" ]; then
+            # Capture only the first non-space token after `suffix:` (so an
+            # inline `# comment` or trailing space can't bleed into the scope),
+            # then strip surrounding quotes only — matching the canonical parser
+            # in .claude/skills/cicd/scripts/_resolve-nick.sh.
             suffix=$(sed -n \
-                's/^[[:space:]]*-\{0,1\}[[:space:]]*suffix:[[:space:]]*//p' \
-                "$dir/culture.yaml" | head -n1 | tr -d "[:space:]\"'")
+                's/^[[:space:]]*-\{0,1\}[[:space:]]*suffix:[[:space:]]*\([^[:space:]]*\).*/\1/p' \
+                "$dir/culture.yaml" | head -n1 | tr -d "\"'")
             break
         fi
         dir=$(dirname "$dir")
