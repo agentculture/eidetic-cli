@@ -157,7 +157,10 @@ def _git_toplevel() -> str | None:
     if cwd in _GIT_CACHE:
         return _GIT_CACHE[cwd]
     try:
-        result = subprocess.run(
+        # `git` is intentionally resolved from PATH (a hard-coded absolute path
+        # would not be portable across dev/CI/install environments); the argv is
+        # a fixed literal with no user input, so there is no injection surface.
+        result = subprocess.run(  # nosec B607
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
