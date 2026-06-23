@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from eidetic.memory.backend import (
     _candidate_read_dirs,
     _git_toplevel,
@@ -14,6 +16,15 @@ from eidetic.memory.backend import (
     _override_dir,
     _resolve_write_dir,
 )
+
+
+@pytest.fixture(autouse=True)
+def _resolver_isolation(monkeypatch) -> None:
+    """Ensure EIDETIC_DATA_DIR is unset and _GIT_CACHE is clean for every test."""
+    monkeypatch.delenv("EIDETIC_DATA_DIR", raising=False)
+    from eidetic.memory import backend as be
+
+    be._GIT_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -34,10 +45,7 @@ def test_home_store_dir(tmp_path) -> None:
 
 def test_override_dir_default() -> None:
     # When EIDETIC_DATA_DIR is not set, return None
-    env = os.environ.copy()
-    env.pop("EIDETIC_DATA_DIR", None)
-    with patch.dict(os.environ, env, clear=True):
-        assert _override_dir() is None
+    assert _override_dir() is None
 
 
 def test_override_dir_set(tmp_path, monkeypatch) -> None:
@@ -58,10 +66,6 @@ def test_git_toplevel_in_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(repo))
-        # Clear cache so we get a fresh result
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _git_toplevel()
         assert result == str(repo)
     finally:
@@ -78,9 +82,6 @@ def test_git_toplevel_in_subdir(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(subdir))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _git_toplevel()
         assert result == str(repo)
     finally:
@@ -94,9 +95,6 @@ def test_git_toplevel_outside_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(not_repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _git_toplevel()
         assert result is None
     finally:
@@ -110,9 +108,6 @@ def test_git_toplevel_git_absent(tmp_path, monkeypatch) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(not_repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
 
         def raise_file_not_found(*args, **kwargs):
             raise FileNotFoundError("git not found")
@@ -132,9 +127,6 @@ def test_git_toplevel_caching(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
 
         call_count = 0
 
@@ -166,10 +158,6 @@ def test_git_toplevel_cache_keyed_by_cwd(tmp_path) -> None:
 
     old_cwd = os.getcwd()
     try:
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
-
         os.chdir(str(repo1))
         result1 = _git_toplevel()
         assert result1 == str(repo1)
@@ -194,16 +182,13 @@ def test_resolve_write_dir_public_in_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _resolve_write_dir("public")
         assert result == str(repo / ".eidetic" / "memory")
     finally:
         os.chdir(old_cwd)
 
 
-def test_resolve_write_dir_private_in_repo(tmp_path, monkeypatch) -> None:
+def test_resolve_write_dir_private_in_repo(tmp_path) -> None:
     """Private record inside a repo resolves to home."""
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -211,9 +196,6 @@ def test_resolve_write_dir_private_in_repo(tmp_path, monkeypatch) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _resolve_write_dir("private")
         # Private always goes to home
         assert result == str(Path.home() / ".eidetic" / "memory")
@@ -228,9 +210,6 @@ def test_resolve_write_dir_public_outside_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(not_repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _resolve_write_dir("public")
         assert result == str(Path.home() / ".eidetic" / "memory")
     finally:
@@ -270,9 +249,6 @@ def test_candidate_read_dirs_no_duplicate(tmp_path) -> None:
         old_cwd = os.getcwd()
         try:
             os.chdir(str(tmp_path))
-            from eidetic.memory import backend as be
-
-            be._GIT_CACHE.clear()
             result = _candidate_read_dirs()
             # Should have exactly one entry (no duplicate)
             assert len(result) == 1
@@ -289,9 +265,6 @@ def test_candidate_read_dirs_in_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _candidate_read_dirs()
         home_dir = str(Path.home() / ".eidetic" / "memory")
         repo_dir = str(repo / ".eidetic" / "memory")
@@ -309,9 +282,6 @@ def test_candidate_read_dirs_outside_repo(tmp_path) -> None:
     old_cwd = os.getcwd()
     try:
         os.chdir(str(not_repo))
-        from eidetic.memory import backend as be
-
-        be._GIT_CACHE.clear()
         result = _candidate_read_dirs()
         assert result == [str(Path.home() / ".eidetic" / "memory")]
     finally:
