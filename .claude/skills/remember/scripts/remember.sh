@@ -12,10 +12,11 @@
 # Upsert is idempotent by id (and dedups by content hash): re-remembering the
 # same record updates it in place, never duplicates.
 #
-# The store is the files backend at $HOME/.eidetic/memory by default — a home-dir
-# path OUTSIDE any git worktree, so a record Claude remembers is recallable by
-# the colleague backend (which runs in throwaway worktrees), and vice versa.
-# Set EIDETIC_DATA_DIR to opt out of sharing; use --backend mongo|neo4j (with
+# The store is the files backend. Default location resolves per-operation:
+# PUBLIC records inside a git repo → <repo-root>/.eidetic/memory (committed,
+# team-shared); PRIVATE records, or any record outside a git repo →
+# $HOME/.eidetic/memory (never committed). An explicit EIDETIC_DATA_DIR still
+# wins and short-circuits to that single dir. Use --backend mongo|neo4j (with
 # EIDETIC_MONGO_URI / NEO4J_URI) for a server-backed shared store.
 
 set -euo pipefail

@@ -301,7 +301,7 @@ store, and rewrites **atomically per file**. Already-migrated lines pass through
 untouched, so re-running converts nothing. Reports data-refinery's file-granularity
 summary `{backend, files, migrated, migrated_files, skipped, dry_run}`; `--dry-run`
 reports the same counts but writes nothing; `--data-dir` overrides the store
-location (default: `EIDETIC_DATA_DIR`, else `~/.eidetic/memory`).
+location (default: `EIDETIC_DATA_DIR`, else `~/.eidetic/memory`; the repo store at `<repo-root>/.eidetic/memory` requires an explicit `--data-dir`).
 
 ## migrate qq flags
 

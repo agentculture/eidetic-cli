@@ -8,10 +8,13 @@ description: >
   dedups by content hash) — re-remembering updates in place, never duplicates.
   Stamps a `created` date on every record at ingest time. Accepts `supersedes`
   (id of the record this one replaces, for within-scope shadowing via `sweep`)
-  and `links` (list of related-memory ids). The store lives at
-  $HOME/.eidetic/memory (a home-dir path outside any git worktree), and the wrapper
-  defaults records to this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli
-  --visibility private`, suffix read from culture.yaml) so they don't leak to a
+  and `links` (list of related-memory ids). The store uses visibility-aware
+  routing: PUBLIC records inside a git repo go to <repo-root>/.eidetic/memory
+  (committed, team-shared); PRIVATE records, or any record outside a git repo,
+  go to $HOME/.eidetic/memory (never committed). An explicit EIDETIC_DATA_DIR
+  wins and short-circuits to that single dir. The wrapper defaults records to
+  this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli --visibility
+  private`, suffix read from culture.yaml) so they don't leak to a
   default/other-scope recall — Claude and the colleague backend still share them
   because both resolve the same suffix via this skill. Pass `--visibility public`
   to contribute to the shared public pool instead. Use when the user says
