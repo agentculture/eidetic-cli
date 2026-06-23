@@ -97,6 +97,47 @@ def test_read_files_yields_section_records(qq_files: list[str]) -> None:
     assert ident.scope.visibility == "private"
 
 
+_NOTES_DUP_MD = """\
+# QQ Memory Notes
+
+## Ongoing Threads
+- The big first thread, the bulk of the file.
+
+## Other Section
+- Something in between.
+
+## Ongoing Threads
+- A second, smaller thread far below the first.
+"""
+
+
+def test_read_files_disambiguates_duplicate_headings(tmp_path: Path) -> None:
+    """Two ## sections that slug identically must NOT collide on one id.
+
+    Regression: duplicate "## Ongoing Threads" headings produced the same
+    qq-file id, so the idempotent upsert dropped all but one section's body.
+    """
+    notes = tmp_path / "notes.md"
+    notes.write_text(_NOTES_DUP_MD, encoding="utf-8")
+
+    records = list(migrate_qq.read_files([str(notes)], scope=Scope("qq", "private")))
+
+    # All three sections survive as distinct records...
+    assert len(records) == 3
+    ids = [r.id for r in records]
+    assert len(set(ids)) == 3, "duplicate headings collapsed to one id"
+
+    # ...the first occurrence keeps the bare slug (stable across re-runs),
+    # the second gets a deterministic -2 suffix.
+    assert ids[0].endswith("#ongoing-threads")
+    assert ids[2].endswith("#ongoing-threads-2")
+
+    # Both bodies are preserved — neither overwrote the other.
+    bodies = "\n".join(r.text for r in records)
+    assert "bulk of the file" in bodies
+    assert "smaller thread far below" in bodies
+
+
 @pytest.fixture
 def no_db(monkeypatch: pytest.MonkeyPatch) -> None:
     """Force Mongo + Neo4j unavailable so file-only tests stay hermetic."""
