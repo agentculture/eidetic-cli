@@ -134,7 +134,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "--data-dir",
         default=None,
         metavar="PATH",
-        help="Store directory to migrate (default: EIDETIC_DATA_DIR, else ~/.eidetic/memory).",
+        help="Store directory to migrate (default: EIDETIC_DATA_DIR, else ~/.eidetic/memory; the repo store at <repo-root>/.eidetic/memory requires an explicit --data-dir).",
     )
     store.add_argument(
         "--dry-run",

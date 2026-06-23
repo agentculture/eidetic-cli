@@ -31,7 +31,21 @@ this is a CLI.
 ## Memory surface (built — v0.3.0+)
 
 The memory surface is live. `remember`, `recall`, `sweep`, and `migrate` are
-all implemented and rubric-green. Two open issues remain the authoritative
+all implemented and rubric-green.
+
+### Default store location (files backend)
+
+The files-backend store location resolves per-operation: PUBLIC records written
+inside a git repo go to `<repo-root>/.eidetic/memory` (committed, team-shared);
+PRIVATE records, or any record written outside a git repo, go to
+`$HOME/.eidetic/memory` (never committed). An explicit `EIDETIC_DATA_DIR` (or
+`migrate store`'s `--data-dir`) still wins and short-circuits to that single
+dir. `recall` reads both stores and merges, so a private-scope query returns
+your private records plus the public pool; the public/private no-leak invariant
+is unchanged. This is the default directory the files backend uses — storage
+mechanics are still handed to `data_refinery`.
+
+Two open issues remain the authoritative
 consumer contracts — **read them before changing the record schema or I/O
 format** (#3 calls its shape "negotiable", #1 calls its objects "proposed"):
 
