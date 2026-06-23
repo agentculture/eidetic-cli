@@ -114,9 +114,7 @@ def _bridge_env(name: str, *, data_dir: str | None = None) -> None:
         if data_dir is not None:
             os.environ["DR_DATA_DIR"] = data_dir
         else:
-            os.environ["DR_DATA_DIR"] = os.environ.get("EIDETIC_DATA_DIR") or str(
-                Path.home() / ".eidetic" / "memory"
-            )
+            os.environ["DR_DATA_DIR"] = os.environ.get("EIDETIC_DATA_DIR") or _home_store_dir()
     elif name == "mongo":
         eidetic_mongo = os.environ.get("EIDETIC_MONGO_URI")
         if eidetic_mongo:
@@ -134,10 +132,19 @@ def _bridge_env(name: str, *, data_dir: str | None = None) -> None:
 # Module-level cache keyed by cwd for _git_toplevel.
 _GIT_CACHE: dict[str, str | None] = {}
 
+# The per-base store layout, defined once so the ".eidetic"/"memory" path
+# components never drift across the resolver helpers (and _bridge_env).
+_STORE_SUBPATH = (".eidetic", "memory")
+
+
+def _store_dir(base: Path) -> str:
+    """Return the eidetic store directory under *base* (``<base>/.eidetic/memory``)."""
+    return str(base.joinpath(*_STORE_SUBPATH))
+
 
 def _home_store_dir() -> str:
     """Return the default home-based store directory path."""
-    return str(Path.home() / ".eidetic" / "memory")
+    return _store_dir(Path.home())
 
 
 def _override_dir() -> str | None:
@@ -189,7 +196,7 @@ def _resolve_write_dir(visibility: str) -> str:
     if visibility == "public":
         top = _git_toplevel()
         if top:
-            return str(Path(top) / ".eidetic" / "memory")
+            return _store_dir(Path(top))
     return _home_store_dir()
 
 
@@ -206,7 +213,7 @@ def _candidate_read_dirs() -> list[str]:
     dirs: list[str] = [_home_store_dir()]
     top = _git_toplevel()
     if top:
-        repo = str(Path(top) / ".eidetic" / "memory")
+        repo = _store_dir(Path(top))
         if repo not in dirs:
             dirs.append(repo)
     return dirs
