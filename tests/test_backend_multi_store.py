@@ -27,9 +27,18 @@ from eidetic.memory.scope import Scope
 
 
 @pytest.fixture(autouse=True)
-def _resolver_isolation(monkeypatch) -> None:
-    """Ensure EIDETIC_DATA_DIR is unset and _GIT_CACHE is clean for every test."""
+def _resolver_isolation(monkeypatch, tmp_path) -> None:
+    """Isolate every test from real on-disk state.
+
+    These tests upsert real records to the *resolved* store, and a private (or
+    outside-repo) write resolves to ``Path.home()/.eidetic/memory``. Without
+    redirecting HOME, that would pollute the developer's live ~/.eidetic store and
+    make the suite non-hermetic. So: unset the EIDETIC_DATA_DIR override, clear the
+    per-cwd git cache, and point HOME at an isolated tmp dir (a sibling of any
+    ``tmp_path/repo`` a test creates).
+    """
     monkeypatch.delenv("EIDETIC_DATA_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     from eidetic.memory import backend as be
 
     be._GIT_CACHE.clear()
