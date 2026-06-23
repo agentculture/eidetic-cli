@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-06-23
+
+### Changed
+
+- Scope resolution no longer silently downgrades an expected-private record to the public default scope: when no culture.yaml suffix resolves *and* the caller passed neither --scope nor --visibility, a single accurate warning is written to stderr (stdout stays clean for --json); passing either flag is a deliberate choice, honored verbatim, and silences the warning (FIX-5).
+- recall.sh: the bareword query `help` is now a real search term (only -h/--help print usage), and a missing query is a hint:+non-zero error instead of exiting 0 (FIX-6).
+
+### Fixed
+
+- remember/recall wrappers: resolve_eidetic no longer implies an unreachable uv-checkout fallback in vendored copies — the not-found path prints one honest, single-line `hint:` to install the CLI (FIX-1, FIX-7).
+- remember.sh no longer blocks forever on an interactive no-arg invocation: with no args and a TTY stdin it prints usage and exits non-zero; the piped NDJSON batch path is unchanged (FIX-2).
+- SKILL.md (both skills) + skill descriptions: store path written as $HOME/.eidetic/memory instead of ~/.eidetic/memory so downstream cicd portability-lint no longer fails (FIX-3).
+- remember.sh --help no longer claims "Public data only." — it now states the private-by-default scope and how --visibility public overrides it (FIX-4).
+- resolve_scope suffix parse hardened against set -o pipefail (head closing the pipe could SIGPIPE sed and abort the script) (FIX-8).
+
 ## [0.9.2] - 2026-06-23
 
 ### Changed
