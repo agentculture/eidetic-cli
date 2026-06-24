@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Design spec for the fully repo-contained memory store: a single `<repo-root>/.eidetic/memory` holds both public and private records (collapsing the 0.10.x two-store model), with private kept out of git by a fail-closed `.gitignore` that data-refinery writes on store-dir materialization. NO behavior change yet — this ships the converged `/think` spec only (`docs/specs/2026-06-24-...repo-contained.md`); implementation is tracked in #25 and blocked on data-refinery-cli#12.
+- Design spec for the fully repo-contained memory store: a single `<repo-root>/.eidetic/memory` holds both public and private records (collapsing the 0.10.x two-store model), with private kept out of git by a fail-closed `.gitignore` that data-refinery writes on store-dir materialization. NO behavior change yet — this ships the converged `/think` spec only (`docs/specs/2026-06-24-eidetic-s-memory-store-is-now-fully-repo-contained.md`); implementation is tracked in #25 and blocked on data-refinery-cli#12.
 
 ## [0.10.1] - 2026-06-24
 
