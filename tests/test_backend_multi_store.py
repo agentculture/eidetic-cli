@@ -21,6 +21,7 @@ from eidetic.memory.backend import (
     StoreBackend,
     _bridge_env,
     _candidate_read_dirs,
+    record_to_envelope,
 )
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
@@ -497,3 +498,92 @@ def test_sweep_reupsert_lands_in_correct_dir(tmp_path) -> None:
         assert found_priv
     finally:
         os.chdir(old_cwd)
+
+
+# ---------------------------------------------------------------------------
+# Regression: dedup must not hide serveable records (BUG 1)
+# ---------------------------------------------------------------------------
+
+
+def test_search_applies_can_serve_before_dedup(tmp_path, monkeypatch) -> None:
+    """eidetic's own can_serve must run BEFORE id-dedup across stores.
+
+    Defense-in-depth: eidetic does not trust the store's own visibility filter
+    (it re-applies ``can_serve`` so the no-leak invariant holds "regardless of
+    the store's behavior"). This test simulates an *unfiltered* store — one whose
+    ``list()`` returns every candidate regardless of scope — so a non-serveable
+    private copy of id "X" is yielded from the first read dir (home) and a
+    serveable public copy of the same id from the second (repo). The private copy
+    must not win dedup and then be filtered out, dropping the record entirely.
+
+    With the fix (can_serve inside the read loop) the public copy survives and
+    "X" is returned. Without it, the private copy occupied the id slot first, was
+    later dropped by the line-380 filter, and "X" vanished — so this test FAILS on
+    the pre-fix code. (A test that goes through the real ``drstore.list`` cannot
+    reproduce the bug, because data-refinery pre-filters by ``can_serve`` at the
+    source — which is why the original colleague-written test passed on old code.)
+    """
+    from eidetic.memory import backend as be
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+
+    priv_env = record_to_envelope(
+        _make_record(rid="X", text="shared text", scope=Scope(name="default", visibility="private"))
+    )
+    pub_env = record_to_envelope(
+        _make_record(rid="X", text="shared text", scope=Scope(name="default", visibility="public"))
+    )
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        be._GIT_CACHE.clear()
+        # Read order is [home, repo]; the non-serveable private copy comes first.
+        dirs = _candidate_read_dirs()
+        assert len(dirs) == 2, dirs
+        home_dir, repo_dir = dirs[0], dirs[1]
+
+        def _unfiltered_list(scope=None, backend=None, **kwargs):
+            d = os.environ.get("DR_DATA_DIR")
+            if d == home_dir:
+                return [priv_env]  # store does NOT filter — yields the private copy
+            if d == repo_dir:
+                return [pub_env]
+            return []
+
+        monkeypatch.setattr(be.drstore, "list", _unfiltered_list)
+
+        results = StoreBackend("files").search(
+            "shared",
+            top_k=10,
+            scope=Scope(name="default", visibility="public"),
+            filters=None,
+        )
+        ids = [r.id for r in results]
+        assert "X" in ids
+    finally:
+        os.chdir(old_cwd)
+
+
+# ---------------------------------------------------------------------------
+# _git_toplevel: fail-closed on OSError (BUG 2)
+# ---------------------------------------------------------------------------
+
+
+def test_git_toplevel_getcwd_raises_returns_none(monkeypatch) -> None:
+    """_git_toplevel() returns None when os.getcwd raises OSError."""
+    from eidetic.memory import backend as be
+
+    be._GIT_CACHE.clear()
+
+    def _bad_getcwd():
+        raise OSError("no such process")
+
+    monkeypatch.setattr(os, "getcwd", _bad_getcwd)
+
+    from eidetic.memory.backend import _git_toplevel
+
+    result = _git_toplevel()
+    assert result is None

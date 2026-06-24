@@ -160,7 +160,10 @@ def _git_toplevel() -> str | None:
     spawns at most one git subprocess, while ``os.chdir`` to a different
     directory gets a fresh result.
     """
-    cwd = os.getcwd()
+    try:
+        cwd = os.getcwd()
+    except OSError:
+        return None
     if cwd in _GIT_CACHE:
         return _GIT_CACHE[cwd]
     try:
@@ -177,7 +180,7 @@ def _git_toplevel() -> str | None:
             return _GIT_CACHE[cwd]
         _GIT_CACHE[cwd] = None
         return None
-    except FileNotFoundError:
+    except OSError:
         _GIT_CACHE[cwd] = None
         return None
 
@@ -345,12 +348,10 @@ class StoreBackend:
         """
         if self._name == "files":
             # Gather candidates from every dir in _candidate_read_dirs(), union by id.
-            # Dedup is first-dir-wins (home is listed before repo): if the SAME id
-            # exists in both stores at different visibilities (an ill-defined state —
-            # upsert routes a given id to exactly one store by its visibility), the
-            # home copy wins. This can only ever *under*-serve such a duplicate (the
-            # later copy is dropped); it can never leak, because the surviving copy is
-            # still gated by can_serve below.
+            # Only serveable copies enter the dedup map (first-dir-wins among
+            # serveable copies; home before repo). Applying can_serve inside the
+            # loop ensures a non-serveable duplicate can never shadow a serveable
+            # one.
             seen: dict[str, Record] = {}
             for d in _candidate_read_dirs():
                 _bridge_env("files", data_dir=d)
@@ -361,6 +362,8 @@ class StoreBackend:
                         **self._kwargs,
                     ):
                         r = record_from_envelope(env)
+                        if not can_serve(scope, r.scope):
+                            continue
                         seen.setdefault(r.id, r)
             candidates = list(seen.values())
         else:
