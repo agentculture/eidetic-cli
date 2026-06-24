@@ -6,10 +6,11 @@
 # forwards every flag verbatim — so `recall.sh "<query>" --mode hybrid --json`
 # is exactly `eidetic recall "<query>" --mode hybrid --json`.
 #
-# The store is the files backend at $HOME/.eidetic/memory by default — a home-dir
-# path OUTSIDE any git worktree, so Claude and the colleague backend (which runs
-# in throwaway worktrees) read the SAME memories. Set EIDETIC_DATA_DIR to opt out
-# of sharing; set EIDETIC_MONGO_URI / NEO4J_URI + --backend for a server store.
+# The store is the files backend. Default location resolves per-operation:
+# PUBLIC records inside a git repo → <repo-root>/.eidetic/memory (committed,
+# team-shared); PRIVATE records, or any record outside a git repo →
+# $HOME/.eidetic/memory (never committed). Recall reads both stores and merges.
+# An explicit EIDETIC_DATA_DIR wins and short-circuits to that single dir.
 
 set -euo pipefail
 

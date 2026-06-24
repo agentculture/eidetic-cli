@@ -1,0 +1,172 @@
+{
+  "slug": "eidetic-cli-s-default-memory-store-becomes-project",
+  "title": "eidetic-cli's default memory store becomes project-local: a PUBLIC record written inside a git repo lands in that repo's committed store (<repo-root>/.eidetic/memory), while PRIVATE records and any record written outside a git repo fall back to $HOME/.eidetic/memory.",
+  "schema_version": 1,
+  "status": "exported",
+  "created": "2026-06-23T19:33:41Z",
+  "updated": "2026-06-23T19:34:21Z",
+  "claims": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic-cli's default memory store becomes project-local: a PUBLIC record written inside a git repo lands in that repo's committed store (<repo-root>/.eidetic/memory), while PRIVATE records and any record written outside a git repo fall back to $HOME/.eidetic/memory.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h1",
+          "text": "The repo-root default is additive and overridable: explicit --data-dir and EIDETIC_DATA_DIR always win, so any existing caller that sets them sees zero behavior change.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "AgentCulture mesh agents (Claude in the main checkout + the colleague backend in throwaway worktrees) and direct CLI consumers that call 'eidetic remember/recall' over a subprocess (#3 jetson-ai-lab-cli, #1 research pipeline). All of them invoke the same CLI.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h2",
+          "text": "All three audiences hit the same single decision point in backend.py, so direct consumers #1/#3 and the shell wrappers resolve the store identically \u2014 there is no wrapper-only divergence to reason about.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c3",
+      "kind": "before_state",
+      "text": "Today backend.py _bridge_env sets DR_DATA_DIR = EIDETIC_DATA_DIR or Path.home()/.eidetic/memory unconditionally \u2014 no git awareness, no visibility awareness. One global cross-project store; project isolation only via --scope, never by path.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h3",
+          "text": "The before-state is verified against the code: the exact line backend.py:112-114 (DR_DATA_DIR = EIDETIC_DATA_DIR or Path.home()/.eidetic/memory) is what changes; nothing else resolves the files-backend path.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c4",
+      "kind": "after_state",
+      "text": "Store path is resolved per-operation from CWD AND visibility: PUBLIC + inside a git repo -> <git-toplevel>/.eidetic/memory (committed, team-shared); PRIVATE, or any record outside a git repo -> $HOME/.eidetic/memory (never committed). The default becomes project-local by path.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h4",
+          "text": "Routing is exactly: explicit override > (visibility==public AND in git repo -> git-toplevel store) > $HOME. A private record in a repo, and any record outside a repo, both resolve to $HOME. [user-confirmed via AskUserQuestion]",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "Project work should recall that project's memory by default instead of a cross-project soup, AND team-relevant (public) memory should travel with the repo via git \u2014 without breaking the existing Claude<->colleague shared-memory story.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h5",
+          "text": "Claude<->colleague sharing survives on BOTH paths: private via the shared same-machine $HOME store (today's mechanism), public via git checkout-copy of the committed store into the colleague's worktree. Neither path strands the other agent.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c6",
+      "kind": "success_signal",
+      "text": "Tests cover all branches: (a) public-in-repo writes/recalls under <git-toplevel>/.eidetic/memory, (b) private and outside-repo use $HOME, (c) explicit EIDETIC_DATA_DIR/--data-dir still win unchanged. This repo's /remember & /recall wrapper docs + SKILL.md descriptions are updated to the new routing. teken rubric stays green; version bumped.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h6",
+          "text": "The override path (EIDETIC_DATA_DIR set) is regression-tested to be byte-identical to today; the new public-in-repo and private/outside-repo branches are each covered by their own tests.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c7",
+      "kind": "boundary",
+      "text": "Scope is the FILES-backend default directory + leaving the existing $HOME store intact (clean break). NOT changing: record schema, ranking modes, scoring/freshness, the can_serve no-leak semantics, or the mongo/neo4j network backends. Explicit --data-dir / EIDETIC_DATA_DIR overrides are unchanged.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h7",
+          "text": "The clean break holds: the populated $HOME/.eidetic/memory is left untouched and stays reachable (private recall, outside-repo, or explicit override); no migration or copy is performed by this change.",
+          "status": "confirmed"
+        }
+      ],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c8",
+      "kind": "decision",
+      "text": "Resolution lives at the single decision point in eidetic/memory/backend.py (Python), made CWD-based-git-aware AND visibility-aware, so every CLI consumer (#1/#3 + the shell wrappers) shares one behavior. find_culture_yaml's module-walk is NOT reused.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c9",
+      "kind": "decision",
+      "text": "'repo root' is the literal git toplevel of the CLI's CWD (git rev-parse --show-toplevel). No common-dir trick: cross-worktree sharing comes from committing the public store (copied into the colleague's worktree at 'git worktree add') and from private records using the shared $HOME store.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    },
+    {
+      "id": "c10",
+      "kind": "decision",
+      "text": "Visibility gains a physical-routing role (public->committed repo store, private->$HOME) IN ADDITION to its logical no-leak role; can_serve/no-leak semantics themselves are unchanged. The public repo store is committed (team-shared); it carries no private records, so committing it leaks nothing.",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": []
+    }
+  ],
+  "open_vagueness": [
+    {
+      "id": "v1",
+      "text": "The /remember & /recall SKILL.md descriptions + wrapper header comments ('$HOME/.eidetic/memory ... OUTSIDE any git worktree') are fanned out byte-verbatim across ~57 org repos; updating them everywhere is a separate rollout-cli re-sync, tracked as follow-up beyond this repo's own docs.",
+      "kind": "follow_up",
+      "claim_id": null
+    },
+    {
+      "id": "v2",
+      "text": "Committing .eidetic/memory means a git commit/diff per public remember and possible merge conflicts across teammates; the data_refinery files on-disk format's merge-friendliness should be validated.",
+      "kind": "follow_up",
+      "claim_id": null
+    },
+    {
+      "id": "v3",
+      "text": "Per-record visibility WITHIN a single batch NDJSON ingest (mixed public/private lines needing two stores in one op) is out of scope; visibility is a per-invocation flag today.",
+      "kind": "out_of_scope",
+      "claim_id": null
+    }
+  ]
+}

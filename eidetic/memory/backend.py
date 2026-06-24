@@ -23,6 +23,7 @@ data-refinery. See issue #13 for the migration context.
 from __future__ import annotations
 
 import os
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Protocol
@@ -94,7 +95,7 @@ class Backend(Protocol):
 # ---------------------------------------------------------------------------
 
 
-def _bridge_env(name: str) -> None:
+def _bridge_env(name: str, *, data_dir: str | None = None) -> None:
     """Map eidetic's historical env vars onto data-refinery's ``DR_*`` names.
 
     Called unconditionally before every store operation so that the *current*
@@ -102,16 +103,18 @@ def _bridge_env(name: str) -> None:
     ``os.environ["EIDETIC_DATA_DIR"]`` directly and expect each
     ``get_backend("files")`` call to pick it up without stale leakage.
 
-    - ``files``:  ``DR_DATA_DIR`` is set to ``EIDETIC_DATA_DIR`` when present,
-      otherwise the default ``~/.eidetic/memory``. The assignment is always made
-      (unconditional) so a stale ``DR_DATA_DIR`` left by a prior test never wins.
+    - ``files``:  ``DR_DATA_DIR`` is set to *data_dir* when given, otherwise
+      ``EIDETIC_DATA_DIR`` when present, otherwise the default
+      ``~/.eidetic/memory``. The assignment is always made (unconditional) so a
+      stale ``DR_DATA_DIR`` left by a prior test never wins.
     - ``mongo``:  ``DR_MONGO_URI`` is forwarded from ``EIDETIC_MONGO_URI`` when set.
     - ``neo4j``:  ``DR_NEO4J_URI`` is forwarded from ``NEO4J_URI`` when set.
     """
     if name == "files":
-        os.environ["DR_DATA_DIR"] = os.environ.get("EIDETIC_DATA_DIR") or str(
-            Path.home() / ".eidetic" / "memory"
-        )
+        if data_dir is not None:
+            os.environ["DR_DATA_DIR"] = data_dir
+        else:
+            os.environ["DR_DATA_DIR"] = os.environ.get("EIDETIC_DATA_DIR") or _home_store_dir()
     elif name == "mongo":
         eidetic_mongo = os.environ.get("EIDETIC_MONGO_URI")
         if eidetic_mongo:
@@ -120,6 +123,103 @@ def _bridge_env(name: str) -> None:
         neo4j_uri = os.environ.get("NEO4J_URI")
         if neo4j_uri:
             os.environ["DR_NEO4J_URI"] = neo4j_uri
+
+
+# ---------------------------------------------------------------------------
+# Store-path resolver helpers
+# ---------------------------------------------------------------------------
+
+# Module-level cache keyed by cwd for _git_toplevel.
+_GIT_CACHE: dict[str, str | None] = {}
+
+# The per-base store layout, defined once so the ".eidetic"/"memory" path
+# components never drift across the resolver helpers (and _bridge_env).
+_STORE_SUBPATH = (".eidetic", "memory")
+
+
+def _store_dir(base: Path) -> str:
+    """Return the eidetic store directory under *base* (``<base>/.eidetic/memory``)."""
+    return str(base.joinpath(*_STORE_SUBPATH))
+
+
+def _home_store_dir() -> str:
+    """Return the default home-based store directory path."""
+    return _store_dir(Path.home())
+
+
+def _override_dir() -> str | None:
+    """Return the explicit ``EIDETIC_DATA_DIR`` override, or ``None``."""
+    return os.environ.get("EIDETIC_DATA_DIR") or None
+
+
+def _git_toplevel() -> str | None:
+    """Return the git repo toplevel for the current working directory.
+
+    Returns ``None`` when outside a repo, git is unavailable, or any error
+    occurs. Never raises. Results are cached per-cwd so a batch ingest
+    spawns at most one git subprocess, while ``os.chdir`` to a different
+    directory gets a fresh result.
+    """
+    try:
+        cwd = os.getcwd()
+    except OSError:
+        return None
+    if cwd in _GIT_CACHE:
+        return _GIT_CACHE[cwd]
+    try:
+        # `git` is intentionally resolved from PATH (a hard-coded absolute path
+        # would not be portable across dev/CI/install environments); the argv is
+        # a fixed literal with no user input, so there is no injection surface.
+        result = subprocess.run(  # nosec B607
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            _GIT_CACHE[cwd] = result.stdout.strip()
+            return _GIT_CACHE[cwd]
+        _GIT_CACHE[cwd] = None
+        return None
+    except OSError:
+        _GIT_CACHE[cwd] = None
+        return None
+
+
+def _resolve_write_dir(visibility: str) -> str:
+    """Resolve the write directory for a record with the given *visibility*.
+
+    Precedence:
+    1. ``EIDETIC_DATA_DIR`` override (if set)
+    2. Repo ``.eidetic/memory`` for public records inside a git repo
+    3. Home ``~/.eidetic/memory`` (private records, or outside a repo)
+    """
+    override = _override_dir()
+    if override:
+        return override
+    if visibility == "public":
+        top = _git_toplevel()
+        if top:
+            return _store_dir(Path(top))
+    return _home_store_dir()
+
+
+def _candidate_read_dirs() -> list[str]:
+    """Return the list of directories to search for multi-store reads.
+
+    When ``EIDETIC_DATA_DIR`` is set, returns a single-element list
+    (byte-identical to today's behaviour). Otherwise returns home plus
+    the repo store (if inside a git repo), with no duplicates.
+    """
+    override = _override_dir()
+    if override:
+        return [override]
+    dirs: list[str] = [_home_store_dir()]
+    top = _git_toplevel()
+    if top:
+        repo = _store_dir(Path(top))
+        if repo not in dirs:
+            dirs.append(repo)
+    return dirs
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +321,10 @@ class StoreBackend:
 
     def upsert(self, record: Record) -> None:
         """Idempotently upsert *record* into the store (by id; dedup by hash within scope)."""
-        _bridge_env(self._name)
+        if self._name == "files":
+            _bridge_env(self._name, data_dir=_resolve_write_dir(record.scope.visibility))
+        else:
+            _bridge_env(self._name)
         with _translate_errors():
             drstore.put(record_to_envelope(record), backend=self._name, **self._kwargs)
 
@@ -243,14 +346,35 @@ class StoreBackend:
         :func:`eidetic.memory.scoring.rank`. Facet *filters* are applied before
         ranking: only records where every ``record.metadata[key] == value`` pass.
         """
-        _bridge_env(self._name)
-        with _translate_errors():
-            envs = drstore.list(
-                scope=DRScope(name=scope.name, visibility=scope.visibility),
-                backend=self._name,
-                **self._kwargs,
-            )
-        candidates = [record_from_envelope(e) for e in envs]
+        if self._name == "files":
+            # Gather candidates from every dir in _candidate_read_dirs(), union by id.
+            # Only serveable copies enter the dedup map (first-dir-wins among
+            # serveable copies; home before repo). Applying can_serve inside the
+            # loop ensures a non-serveable duplicate can never shadow a serveable
+            # one.
+            seen: dict[str, Record] = {}
+            for d in _candidate_read_dirs():
+                _bridge_env("files", data_dir=d)
+                with _translate_errors():
+                    for env in drstore.list(
+                        scope=DRScope(name=scope.name, visibility=scope.visibility),
+                        backend="files",
+                        **self._kwargs,
+                    ):
+                        r = record_from_envelope(env)
+                        if not can_serve(scope, r.scope):
+                            continue
+                        seen.setdefault(r.id, r)
+            candidates = list(seen.values())
+        else:
+            _bridge_env(self._name)
+            with _translate_errors():
+                envs = drstore.list(
+                    scope=DRScope(name=scope.name, visibility=scope.visibility),
+                    backend=self._name,
+                    **self._kwargs,
+                )
+            candidates = [record_from_envelope(e) for e in envs]
         # Defense in depth: data-refinery's list() already enforces scope
         # visibility via its own can_serve, but re-applying eidetic's policy here
         # makes the public/private no-leak invariant hold *in eidetic* regardless
@@ -278,10 +402,22 @@ class StoreBackend:
         rules — required for the ``sweep`` lifecycle pass that must see every
         record (public and private) to evaluate transitions.
         """
-        _bridge_env(self._name)
-        with _translate_errors():
-            backend = drstore.get_backend(self._name, **self._kwargs)
-            return [record_from_envelope(e) for e in backend.all()]
+        if self._name == "files":
+            # Enumerate across every dir in _candidate_read_dirs(), union by id.
+            seen: dict[str, Record] = {}
+            for d in _candidate_read_dirs():
+                _bridge_env("files", data_dir=d)
+                with _translate_errors():
+                    backend = drstore.get_backend("files", **self._kwargs)
+                    for env in backend.all():
+                        r = record_from_envelope(env)
+                        seen.setdefault(r.id, r)
+            return list(seen.values())
+        else:
+            _bridge_env(self._name)
+            with _translate_errors():
+                backend = drstore.get_backend(self._name, **self._kwargs)
+                return [record_from_envelope(e) for e in backend.all()]
 
 
 # ---------------------------------------------------------------------------

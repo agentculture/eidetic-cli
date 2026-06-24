@@ -9,13 +9,17 @@ description: >
   text, full metadata, a relevance `score`, and a freshness `signal`. Recall
   passively reinforces matched records (bumps last_recall + recall_count).
   Shadowed and archived records are excluded by default; use
-  --include-shadowed / --include-archived to retrieve them. The store lives at
-  $HOME/.eidetic/memory (a home-dir path outside any git worktree); the wrapper
-  defaults queries to this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli
-  --visibility private`, suffix read from culture.yaml) — matching where
-  /remember writes — so a no-flag recall returns this agent's own private records
-  plus the shared public pool, and Claude and the colleague backend recall each
-  other's memories because both resolve the same suffix via this skill. Use
+  --include-shadowed / --include-archived to retrieve them. The store uses
+  visibility-aware routing: PUBLIC records inside a git repo go to
+  <repo-root>/.eidetic/memory (committed, team-shared); PRIVATE records, or any
+  record outside a git repo, go to $HOME/.eidetic/memory (never committed). An
+  explicit EIDETIC_DATA_DIR wins and short-circuits to that single dir. Recall
+  reads both stores and merges. The wrapper defaults queries to this agent's
+  PERSONAL, PRIVATE scope (`--scope eidetic-cli --visibility private`, suffix
+  read from culture.yaml) — matching where /remember writes — so a no-flag
+  recall returns this agent's own private records plus the shared public pool,
+  and Claude and the colleague backend recall each other's memories because both
+  resolve the same suffix via this skill. Use
   when the user says "recall", "what do we know about X", "search memory",
   "have we seen X before", "look it up in memory", "eidetic recall", or before
   answering from scratch when prior context may already be stored. Pairs with

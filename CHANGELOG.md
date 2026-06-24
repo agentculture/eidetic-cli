@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-06-24
+
+### Fixed
+
+- StoreBackend.search() now applies can_serve BEFORE cross-store id-dedup, so a non-serveable private copy can no longer occupy an id slot and hide a serveable public copy of the same id (Qodo PR #23 finding 1; defense-in-depth — not exploitable through data_refinery.store.list(), which pre-filters).
+- _git_toplevel() truly fails closed: os.getcwd() is now inside the try and the subprocess guard catches OSError (not just FileNotFoundError), honoring its "Never raises" contract before every files-backend op (Qodo PR #23 finding 2).
+
+## [0.10.0] - 2026-06-24
+
+### Added
+
+- Project-local default for the files-backend memory store: a PUBLIC record written inside a git repo is stored in (and committed to) `<repo-root>/.eidetic/memory` (team-shared), instead of always using a single global $HOME store. The public/private no-leak invariant is preserved.
+
+### Changed
+
+- Files-backend store path now resolves per-operation by visibility and cwd: PUBLIC + inside a git repo -> `<repo-root>/.eidetic/memory`; PRIVATE, or any record outside a git repo -> $HOME/.eidetic/memory (never committed). recall and sweep read and merge across both stores. Precedence: explicit --data-dir / EIDETIC_DATA_DIR > public-in-repo > $HOME; setting EIDETIC_DATA_DIR keeps the prior single-directory behavior byte-for-byte. mongo/neo4j backends are unaffected.
+
 ## [0.9.3] - 2026-06-23
 
 ### Changed
