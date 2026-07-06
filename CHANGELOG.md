@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-07-06
+
+### Added
+
+- `docs/contract.md` — the memory scope+visibility convention (v1) every
+  consumer of the eidetic memory store pins to: a personal scope per repo
+  named by `culture.yaml`'s `suffix`, and a `public` default visibility for
+  in-repo team-shared records (private stays one explicit
+  `--visibility private` away). Includes a machine-readable summary block
+  cross-checked by `tests/test_contract_drift.py`.
+
+### Changed
+
+- The vendored `recall`/`remember` skill wrappers
+  (`.claude/skills/{recall,remember}/scripts/*.sh`) now default to `public`
+  visibility for a no-flag invocation, matching the plain `eidetic
+  remember`/`recall` CLI's own argparse default (already `public`, unchanged)
+  and colleague's own `colleague/memory.py` runtime. This is a deliberate
+  **reversal** of the private-by-default decision recorded in
+  `docs/specs/2026-06-23-eidetic-cli-s-remember-recall-skill-wrappers-are-h.md`
+  (FIX-4) — recorded honestly in `docs/contract.md`'s History section rather
+  than silently overwritten. **Downstream note:** these wrappers are
+  fanned out to roughly 57 consumer repos (including colleague's own
+  vendored copy); this fix needs a downstream re-sync/rollout to take
+  effect there.
+- The embedder code default is aligned to the documented reference
+  deployment (port 8002 / `Qwen3-Embedding-0.6B`, was 8101 /
+  `text-embedding-3-small`), with a three-way drift test
+  (`tests/test_embed_default_drift.py`) pinning code, docs, and the wrapper
+  scripts in agreement.
+
 ## [0.10.1] - 2026-06-24
 
 ### Fixed
