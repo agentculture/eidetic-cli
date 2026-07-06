@@ -18,8 +18,16 @@ from typing import Any
 # Configuration
 # -----------------------------------------------------------------------
 
-_DEFAULT_BASE_URL = "http://localhost:8101/v1"
-_DEFAULT_MODEL = "text-embedding-3-small"
+# Aligned to the reference deployment documented in README.md and
+# docs/contract.md (eidetic-cli#28 / colleague#293): the vendored
+# `recall.sh`/`remember.sh` wrappers and this project's own README already
+# pointed at the real embedder rig (localhost:8002, Qwen3-Embedding-0.6B) —
+# these code defaults used to diverge from that (a stale localhost:8101 +
+# text-embedding-3-small pair) and only matched by accident of every real
+# invocation exporting the wrapper's override first. Now all three surfaces
+# agree; drift-tested by tests/test_embed_default_drift.py.
+_DEFAULT_BASE_URL = "http://localhost:8002/v1"
+_DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 _EMBED_DIM = 128
 _EMBED_TIMEOUT: float = float(os.environ.get("EIDETIC_EMBED_TIMEOUT", "10"))
 

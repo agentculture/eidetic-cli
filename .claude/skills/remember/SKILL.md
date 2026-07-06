@@ -13,11 +13,13 @@ description: >
   (committed, team-shared); PRIVATE records, or any record outside a git repo,
   go to $HOME/.eidetic/memory (never committed). An explicit EIDETIC_DATA_DIR
   wins and short-circuits to that single dir. The wrapper defaults records to
-  this agent's PERSONAL, PRIVATE scope (`--scope eidetic-cli --visibility
-  private`, suffix read from culture.yaml) so they don't leak to a
-  default/other-scope recall — Claude and the colleague backend still share them
-  because both resolve the same suffix via this skill. Pass `--visibility public`
-  to contribute to the shared public pool instead. Use when the user says
+  this agent's PERSONAL, PUBLIC scope (`--scope eidetic-cli --visibility
+  public`, suffix read from culture.yaml) — the memory scope+visibility
+  convention (v1, docs/contract.md) — matching both the plain `eidetic
+  remember` CLI's own default and the colleague backend's runtime, so a
+  no-flag remember here and a no-flag `eidetic remember` elsewhere land
+  mutually-visible records. Pass `--visibility private` to keep a record out
+  of the shared/committed store instead. Use when the user says
   "remember this", "store this", "save to memory", "index these", "eidetic
   remember", or when something learned this session should outlive it. Pairs with
   the sibling /recall skill.
@@ -62,11 +64,12 @@ The wrapper resolves the CLI portably (installed `eidetic` on `PATH`, else
 | `links` | optional | list of related-memory ids; persisted for future corroboration scoring |
 
 `score` and `signal` are recall-only and are ignored on ingest. **Mind the
-scope:** the default personal scope is **private** (`--scope eidetic-cli
---visibility private`), so personal/role-gated notes stay isolated to this
-agent's recall and are safe to store. Only when you deliberately write to a
-**public** scope (`--visibility public`) does the record enter the shared pool
-visible to every scope — keep public-scope records to public data only.
+scope:** the default personal scope is **public** (`--scope eidetic-cli
+--visibility public`), so a plain remember is team-shared and travels with
+the repo (`<repo-root>/.eidetic/memory`, committed) — keep default-scope
+records to shareable data. Only when you deliberately write to a **private**
+scope (`--visibility private`) is the record isolated to `$HOME/.eidetic/memory`
+and invisible to any other scope's recall (including a public one).
 
 ## Idempotency
 
@@ -93,12 +96,12 @@ eidetic sweep             # apply transitions
 
 - `--json` — structured result (`{"upserted": N, "ids": [...]}`) to stdout.
 - `--scope NAME` / `--visibility public|private` — record scope. **The wrapper
-  defaults this to the agent's PERSONAL, PRIVATE scope** — `--scope <suffix>
-  --visibility private`, where `<suffix>` is read from the nearest `culture.yaml`
-  (here, `eidetic-cli`). Private records are served only to a recall in the same
-  scope, so they don't leak to a `default`/other-scope query. Pass `--scope` to
-  steer to a different scope (which then uses the plain CLI default visibility),
-  or `--visibility public` to keep the personal scope but make it shared. A wheel
+  defaults this to the agent's PERSONAL, PUBLIC scope** — `--scope <suffix>
+  --visibility public`, where `<suffix>` is read from the nearest `culture.yaml`
+  (here, `eidetic-cli`). Public records are visible to any scope's recall (no
+  isolation). Pass `--scope` to steer to a different scope (which then uses
+  the plain CLI default visibility, also `public`), or `--visibility private`
+  to keep the personal scope but isolate it to `$HOME/.eidetic/memory`. A wheel
   install with no `culture.yaml` falls back to the CLI default `default`/`public`.
 - `--backend files|mongo|neo4j` — default `files` (the shared home-dir store);
   use `mongo`/`neo4j` (with `EIDETIC_MONGO_URI` / `NEO4J_URI`) for a server store.
@@ -113,6 +116,10 @@ eidetic sweep             # apply transitions
   `PATH` (in a dev checkout it isn't); the wrapper resolves it (`PATH` first, else
   `uv run eidetic`). For the docs, run `eidetic explain remember` if installed,
   otherwise `uv run --project <eidetic-cli checkout> eidetic explain remember`.
+- **Scope + visibility convention:** see [`docs/contract.md`](../../../docs/contract.md)
+  (memory scope+visibility convention, v1) for the naming/default rules this
+  wrapper (and every other `eidetic remember`/`recall` consumer, including
+  the colleague backend's `colleague/memory.py`) pins to.
 
 ## Provenance
 
