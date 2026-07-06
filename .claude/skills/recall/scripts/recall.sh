@@ -79,7 +79,7 @@ esac
 
 resolve_eidetic || exit 2
 
-# ── default to this agent's PERSONAL, PRIVATE scope (culture.yaml `suffix`) ──
+# ── default to this agent's PERSONAL, PUBLIC scope (culture.yaml `suffix`) ───
 # Query this agent's OWN personal scope by default, matching where /remember
 # writes, instead of the global `default` scope shared by every project on this
 # host. We read the `suffix` from the nearest culture.yaml (walking up from this
@@ -88,15 +88,26 @@ resolve_eidetic || exit 2
 # backend (running in a worktree of this same repo) resolves the same suffix,
 # keeping the Claude↔colleague shared-memory story intact.
 #
-# The personal scope is PRIVATE by default to match /remember: in eidetic's model
-# a private record is served only to a recall in the SAME scope (`can_serve`), so
-# querying with --scope <suffix> --visibility private is what retrieves those
-# isolated records (a public/default recall can't see them). Scope and visibility
-# are paired — the private default applies only when we inject the resolved scope,
-# and only if the caller didn't pass --visibility (so an explicit
-# `--visibility public` still wins). An explicit --scope on the command line takes
-# over steering entirely; a wheel install with no culture.yaml falls back to the
-# plain CLI default (`default`/`public`).
+# The personal scope is PUBLIC by default to match /remember — the memory
+# scope+visibility convention (v1, docs/contract.md): a public record is
+# visible to ANY query scope regardless of name (`can_serve`,
+# eidetic/memory/scope.py), so a no-flag recall here returns the full public
+# pool, matching both the plain `eidetic recall` CLI's own --visibility
+# default and the colleague backend's runtime (colleague/memory.py hardcodes
+# --visibility public). Scope and visibility are paired — the public default
+# applies only when we inject the resolved scope, and only if the caller
+# didn't pass --visibility (so an explicit `--visibility private` still
+# wins). Passing --visibility private restores exactly what used to be the
+# implicit default: this agent's own private notes (scope=<suffix>, matched
+# exactly — `can_serve` only serves a private record to a query in the SAME
+# scope) PLUS the full public pool (a private query still sees every public
+# record too — that "private + public" merge is `can_serve`'s behavior
+# whenever the QUERY itself is private, unrelated to this default). What
+# changed is only the no-flag case: a plain recall now returns public-only,
+# since a public-visibility query structurally excludes every private
+# record regardless of scope name. An explicit --scope on the command line
+# takes over steering entirely; a wheel install with no culture.yaml falls
+# back to the plain CLI default (`default`/`public`).
 resolve_scope() {
     local dir suffix=""
     dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -136,16 +147,15 @@ if ! has_flag --scope "$@"; then
     EIDETIC_SCOPE=$(resolve_scope)
     if [ -n "$EIDETIC_SCOPE" ]; then
         SCOPE_ARGS+=(--scope "$EIDETIC_SCOPE")
-        has_flag --visibility "$@" || SCOPE_ARGS+=(--visibility private)
-    elif ! has_flag --visibility "$@"; then
-        # No suffix AND no explicit --visibility: the query runs against
-        # eidetic's own default (scope=default, visibility=public), not this
-        # agent's private personal scope — so an empty result isn't silently
-        # misread. Warn on stderr (stdout stays clean for --json). Warn ONLY
-        # here: an explicit --scope (outer guard) or --visibility (this guard) is
-        # a deliberate choice, honored verbatim, so either flag silences this.
-        printf 'warning: no culture.yaml suffix resolved; querying the public default scope rather than a private personal scope. Pass --scope or --visibility to target deliberately.\n' >&2
+        has_flag --visibility "$@" || SCOPE_ARGS+=(--visibility public)
     fi
+    # No suffix resolved (e.g. a wheel install with no culture.yaml): leave
+    # --scope/--visibility unset entirely, so the plain `eidetic recall`
+    # defaults apply (scope=default, visibility=public) — identical
+    # visibility to the suffix-resolved case above, just grouped under the
+    # `default` scope name instead of this agent's personal one. Nothing to
+    # warn about: unlike the old private-by-default behavior, there is no
+    # unexpected-leak or unexpected-empty-result surprise here either way.
 fi
 
 # Default the embedding endpoint to the local model-gear embed gear. eidetic
