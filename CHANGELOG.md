@@ -36,6 +36,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`tests/test_embed_default_drift.py`) pinning code, docs, and the wrapper
   scripts in agreement.
 
+### Fixed
+
+- Hardened `tests/test_wrapper_convention.py` per Qodo PR #29 review: it now
+  (1) proves wrapper and raw CLI resolve the *same default store location*
+  under the real algorithm — a throwaway `git init` repo + redirected `HOME`,
+  no `EIDETIC_DATA_DIR` short-circuit (finding 1); (2) pins the wrapper's
+  `command -v eidetic` to this checkout's console script so a globally-installed
+  `eidetic` on `PATH` can't make the two surfaces run different versions
+  (finding 2); and (3) reads records via the in-process backend API
+  (`get_backend("files").all()`) instead of scraping `*.jsonl`, decoupling from
+  data-refinery's on-disk layout (finding 3). Test-only — the fanned-out
+  wrappers are unchanged.
+
 ## [0.10.2] - 2026-06-24
 
 ### Added

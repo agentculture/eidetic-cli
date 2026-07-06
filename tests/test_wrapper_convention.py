@@ -35,6 +35,9 @@ from pathlib import Path
 
 import pytest
 
+from eidetic.memory.backend import get_backend
+from eidetic.memory.record import Record
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REMEMBER_WRAPPER = REPO_ROOT / ".claude" / "skills" / "remember" / "scripts" / "remember.sh"
 RECALL_WRAPPER = REPO_ROOT / ".claude" / "skills" / "recall" / "scripts" / "recall.sh"
@@ -56,6 +59,19 @@ def _run(argv: list[str], *, cwd: Path, env: dict) -> subprocess.CompletedProces
     )
 
 
+def _pin_eidetic_on_path(env: dict) -> dict:
+    """Pin the wrapper's ``command -v eidetic`` resolution to THIS checkout's
+    console script (the same code as ``python -m eidetic``), by prepending the
+    directory of the running interpreter — under ``uv run`` the venv's
+    ``eidetic`` console script lives alongside its ``python``. Without this, a
+    globally-installed ``eidetic`` earlier on PATH would make the wrapper
+    subprocess and the raw-CLI comparison run DIFFERENT versions (Qodo PR #29
+    finding 2). Mutates and returns *env*."""
+    venv_bin = str(Path(sys.executable).parent)
+    env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def _base_env(data_dir: Path) -> dict:
     """A minimal, isolated environment: EIDETIC_DATA_DIR pinned to a throwaway
     dir so this test never touches a real store, and no live embed server
@@ -64,7 +80,7 @@ def _base_env(data_dir: Path) -> dict:
     env["EIDETIC_DATA_DIR"] = str(data_dir)
     env.pop("EIDETIC_EMBED_URL", None)
     env.pop("EIDETIC_EMBED_MODEL", None)
-    return env
+    return _pin_eidetic_on_path(env)
 
 
 def _raw_eidetic(*args: str) -> list[str]:
@@ -73,23 +89,27 @@ def _raw_eidetic(*args: str) -> list[str]:
     return [sys.executable, "-m", "eidetic", *args]
 
 
-def _all_records(data_dir: Path) -> list[dict]:
-    """Read every record from every *.jsonl file under data_dir (any scope)."""
-    records: list[dict] = []
-    if not data_dir.exists():
-        return records
-    for f in data_dir.glob("*.jsonl"):
-        for line in f.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                records.append(json.loads(line))
-    return records
+def _all_records(data_dir: Path) -> list[Record]:
+    """Enumerate every record under *data_dir* via the in-process backend API
+    (``get_backend("files").all()``) instead of scraping ``*.jsonl`` directly —
+    so the test doesn't couple to data_refinery's on-disk file-per-scope layout
+    (Qodo PR #29 finding 3). ``EIDETIC_DATA_DIR`` is set as an override (matching
+    what the subprocess writes were given via ``_base_env``), then restored."""
+    prior = os.environ.get("EIDETIC_DATA_DIR")
+    os.environ["EIDETIC_DATA_DIR"] = str(data_dir)
+    try:
+        return get_backend("files").all()
+    finally:
+        if prior is None:
+            os.environ.pop("EIDETIC_DATA_DIR", None)
+        else:
+            os.environ["EIDETIC_DATA_DIR"] = prior
 
 
-def _visibility_of(records: list[dict], record_id: str) -> str | None:
+def _visibility_of(records: list[Record], record_id: str) -> str | None:
     for r in records:
-        if r["id"] == record_id:
-            return r["scope"]["visibility"]
+        if r.id == record_id:
+            return r.scope.visibility
     return None
 
 
@@ -197,3 +217,78 @@ def test_recall_wrapper_sees_remember_wrapper_records_with_no_flags(tmp_path: Pa
     hits = json.loads(recall_result.stdout)
     ids = {h["id"] for h in hits}
     assert "wrap-roundtrip-1" in ids
+
+
+def test_wrapper_and_raw_cli_resolve_the_same_default_store_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prove wrapper and raw CLI resolve the SAME store directory under the
+    REAL default-resolution algorithm (``eidetic/memory/backend.py``
+    ``_resolve_write_dir``) — not merely identically via an ``EIDETIC_DATA_DIR``
+    override that short-circuits it (Qodo PR #29 finding 1 / compliance ID
+    1345474).
+
+    Hermetic: runs inside a throwaway ``git init`` repo under ``tmp_path`` with
+    ``HOME`` also redirected under ``tmp_path``, so BOTH the public-write
+    repo-root branch and the private/HOME fallback branch land under
+    ``tmp_path`` — never touching this checkout's real ``.eidetic/memory`` or
+    the developer's real ``$HOME``. Safe because store-directory resolution is
+    CWD-driven (``_git_toplevel()`` shells ``git rev-parse --show-toplevel``
+    against ``os.getcwd()``) — a SEPARATE axis from the wrapper's own
+    scope/visibility resolution, which walks up from the wrapper SCRIPT's own
+    location to find ``culture.yaml``. Redirecting CWD therefore doesn't disturb
+    which scope the wrapper injects; it only redirects where records land.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+
+    monkeypatch.delenv("EIDETIC_DATA_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.chdir(repo)
+
+    from eidetic.memory import backend as be
+
+    be._GIT_CACHE.clear()
+
+    env = dict(os.environ)
+    env.pop("EIDETIC_EMBED_URL", None)
+    env.pop("EIDETIC_EMBED_MODEL", None)
+    _pin_eidetic_on_path(env)
+
+    wrapper_record = {"id": "wrap-loc-1", "text": "wrapper location record", "type": "note"}
+    raw_record = {"id": "raw-loc-1", "text": "raw location record", "type": "note"}
+
+    # No --scope, no --visibility on either surface: exercise the true default
+    # path (wrapper injects its resolved scope + public; raw CLI uses its own
+    # argparse defaults). Both are public, so both route to <repo>/.eidetic/memory.
+    wrapper_result = _run(
+        ["bash", str(REMEMBER_WRAPPER), json.dumps(wrapper_record), "--json"],
+        cwd=repo,
+        env=env,
+    )
+    assert wrapper_result.returncode == 0, wrapper_result.stderr
+
+    raw_result = _run(
+        _raw_eidetic("remember", json.dumps(raw_record), "--json"),
+        cwd=repo,
+        env=env,
+    )
+    assert raw_result.returncode == 0, raw_result.stderr
+
+    # LOCATION (a filesystem-location claim, so a thin file check): both landed
+    # under <repo>/.eidetic/memory and NOT under the redirected HOME store.
+    repo_store = repo / ".eidetic" / "memory"
+    home_store = tmp_path / "home" / ".eidetic" / "memory"
+    assert list(repo_store.glob("*.jsonl")), "expected records in the repo-local store"
+    if home_store.exists():
+        assert not list(
+            home_store.glob("*.jsonl")
+        ), "a public write leaked into the HOME store instead of the repo store"
+
+    # VISIBILITY via the in-process API (not file-scraping).
+    records = {r.id: r for r in get_backend("files").all()}
+    assert "wrap-loc-1" in records, "wrapper record did not resolve to the repo store"
+    assert "raw-loc-1" in records, "raw CLI record did not resolve to the repo store"
+    assert records["wrap-loc-1"].scope.visibility == "public"
+    assert records["raw-loc-1"].scope.visibility == "public"
