@@ -161,6 +161,10 @@ fi
 # Default the embedding endpoint to the local model-gear embed gear. eidetic
 # falls back to a deterministic offline embedding if it's unreachable, so this
 # is safe even when the gear is down. Override by exporting these yourself.
+# As of eidetic-cli#28 (colleague#293) these values now match eidetic's own
+# code default in eidetic/memory/embed.py, so this export is a redundant-but-
+# harmless belt-and-suspenders default kept for explicitness and for older
+# eidetic installs that predate the code-default alignment.
 : "${EIDETIC_EMBED_URL:=http://localhost:8002/v1}"
 : "${EIDETIC_EMBED_MODEL:=Qwen/Qwen3-Embedding-0.6B}"
 export EIDETIC_EMBED_URL EIDETIC_EMBED_MODEL

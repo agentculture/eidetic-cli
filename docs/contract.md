@@ -104,6 +104,53 @@ machine-readable block, then assert it against your own hardcoded flags (or
 argparse defaults) so a future edit on either side is caught instead of
 silently drifting back into disagreement.
 
+## 5. Embedder default (reference deployment)
+
+A second, independent alignment tracked under the same issue thread
+([eidetic-cli#28](https://github.com/agentculture/eidetic-cli/issues/28) /
+[colleague#293](https://github.com/agentculture/colleague/issues/293),
+colleague#291 task S2): the embeddings/rerank endpoint default. Three
+surfaces used to state it, and one of them — the `eidetic/memory/embed.py`
+code default — disagreed with the other two (a stale
+`http://localhost:8101/v1` + `text-embedding-3-small` pair, left over from
+before the reference rig moved to its current embedder). The vendored
+`recall.sh`/`remember.sh` wrappers and this repo's own README already
+pointed at the real reference-rig endpoint, and every real invocation
+exported that endpoint before the divergent code default ever got a chance
+to matter — an accidental workaround, not a decision. This section states
+the one, now-agreed value.
+
+```text
+embed_default_url: http://localhost:8002/v1
+embed_default_model: Qwen/Qwen3-Embedding-0.6B
+```
+
+The block above is parsed by `tests/test_embed_default_drift.py` and
+compared against `eidetic/memory/embed.py`'s `_DEFAULT_BASE_URL` /
+`_DEFAULT_MODEL` module constants and the literal `:=` default each vendored
+wrapper script exports. A future divergence on any of the three fails that
+test.
+
+**On the AgentCulture mesh, this endpoint is discoverable, not just
+hardcoded.** The `lobes` gateway serves an `embedder` role in its
+`GET /capabilities` response (lobes-cli >= 0.38, where each role's
+`endpoint` field is client-reachable — see colleague's `colleague/lobes.py`
+docstring for the pre-0.38/post-0.38 distinction). A consumer such as
+colleague resolves that role from lobes and injects
+`EIDETIC_EMBED_URL`/`EIDETIC_EMBED_MODEL` into the process environment
+before shelling out to `eidetic remember`/`eidetic recall` — the same
+env-var seam the vendored wrappers use above, just populated from live
+discovery instead of a fixed `:=` default. This never overrides an
+operator's own explicit export: `EmbedClient.__init__`
+(`eidetic/memory/embed.py`) reads
+`os.environ.get("EIDETIC_EMBED_URL"/"EIDETIC_EMBED_MODEL")` ahead of the
+`_DEFAULT_BASE_URL`/`_DEFAULT_MODEL` constants, and no CLI flag sits between
+the two (`EmbedClient()` is constructed with no arguments at its one call
+site, `eidetic/memory/backend.py`) — so an explicitly-set env var always
+wins. eidetic's own env-first resolution order already guarantees this;
+lobes discovery only ever supplies a smarter *default* for that same slot,
+never a competing override path.
+
 ## History / versioning
 
 - **v1** (this document — [eidetic-cli#28](https://github.com/agentculture/eidetic-cli/issues/28)
@@ -125,3 +172,13 @@ silently drifting back into disagreement.
   machine-readable block above and add a dated entry here, so
   `tests/test_contract_drift.py` and a human reader both notice a version
   bump that isn't matched by a doc update (or vice versa).
+- **S2** ([eidetic-cli#28](https://github.com/agentculture/eidetic-cli/issues/28)
+  / [colleague#293](https://github.com/agentculture/colleague/issues/293),
+  colleague#291 task S2): added [§5](#5-embedder-default-reference-deployment),
+  a separate embedder-endpoint-default alignment — the `eidetic/memory/embed.py`
+  code default moved to match the README and the vendored wrappers
+  (`http://localhost:8002/v1` / `Qwen/Qwen3-Embedding-0.6B`), plus the note on
+  how a `lobes`-gateway `embedder` role can supply that same default by live
+  discovery. This is unrelated to the scope+visibility convention's own
+  `version` field above; retrieval logic, fallback behavior, and timeouts are
+  unchanged.

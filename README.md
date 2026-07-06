@@ -78,6 +78,26 @@ Embeddings + rerank come from a separate model-gear HTTP endpoint
 local lexical fallback when it is absent. Only `approximate`/`hybrid` recall use
 it; `exact`/`keyword` are pure lexical and work fully offline.
 
+**Reference deployment.** The default above is the reference rig's real
+embedder, and it is now a single agreed value across every surface — the
+`eidetic/memory/embed.py` code default, the vendored `recall.sh`/`remember.sh`
+wrapper exports, and this README (eidetic-cli#28 / colleague#293,
+drift-tested by `tests/test_embed_default_drift.py`; see
+[`docs/contract.md`](docs/contract.md) for the machine-readable record). On
+the AgentCulture mesh, the same endpoint is discoverable rather than
+hardcoded: the `lobes` gateway serves an `embedder` role in its
+`GET /capabilities` response (lobes-cli >= 0.38, where each role's `endpoint`
+field is client-reachable — see colleague's `colleague/lobes.py`), and a
+consumer such as colleague resolves that role and injects
+`EIDETIC_EMBED_URL`/`EIDETIC_EMBED_MODEL` into the environment before shelling
+out to `eidetic`. That injection never overrides an operator's own explicit
+export: `EmbedClient.__init__` (`eidetic/memory/embed.py`) reads
+`os.environ.get("EIDETIC_EMBED_URL"/"EIDETIC_EMBED_MODEL")` ahead of the
+built-in default and no CLI flag intervenes between the two, so an
+explicitly-set env var always wins — eidetic's own env-first resolution
+order already guarantees this; lobes discovery just supplies a smarter
+default for the same environment slot, never a competing one.
+
 ## Freshness signal
 
 Every record carries temporal state used to compute a *freshness signal* — a
