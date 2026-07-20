@@ -7,10 +7,13 @@ a deterministic lexical embedding so the CLI works fully offline.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import math
 import os
+import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -42,24 +45,58 @@ _EMBED_DIM = 128
 _EMBED_TIMEOUT: float = float(os.environ.get("EIDETIC_EMBED_TIMEOUT", "10"))
 
 # The gateway enforces a bearer token. Checked in order; the first set wins.
-# `EIDETIC_EMBED_API_KEY` is eidetic's own name; the others are the deployment
-# variables the local fleet already exports, so a configured box needs no extra
-# setup. Absent all three we send no header — an unauthenticated gateway (or a
-# plain vLLM endpoint) still works, and a 401 degrades to the lexical fallback.
-_API_KEY_VARS = (
-    "EIDETIC_EMBED_API_KEY",
-    "COLLEAGUE_API_KEY",
-    "CULTURE_VLLM_API_KEY",
-)
+# Absent all of them we send no header — an unauthenticated gateway (or a plain
+# vLLM endpoint) still works, and a 401 degrades to the lexical fallback.
+#
+# The two classes are deliberately NOT equivalent. `EIDETIC_EMBED_API_KEY` is
+# eidetic's own variable: setting it is an explicit statement about *this*
+# client, so it is honoured wherever the operator points the endpoint. The
+# others belong to sibling tools and are *borrowed* as a convenience so a
+# configured box needs no extra setup — but the operator never paired them with
+# eidetic's endpoint, so we won't hand them to an arbitrary host in cleartext.
+# See :meth:`EmbedClient._may_send_key`.
+_EXPLICIT_API_KEY_VAR = "EIDETIC_EMBED_API_KEY"
+_BORROWED_API_KEY_VARS = ("COLLEAGUE_API_KEY", "CULTURE_VLLM_API_KEY")
+_API_KEY_VARS = (_EXPLICIT_API_KEY_VAR, *_BORROWED_API_KEY_VARS)
+
+# Emitted at most once per process so a withheld key is never a silent
+# degradation — withholding it means a 401, and a 401 means the lexical
+# fallback, which is exactly the failure mode this module already hides too well.
+_warned_withheld = False
 
 
-def _resolve_api_key() -> str | None:
-    """Return the first API key set among :data:`_API_KEY_VARS`, else ``None``."""
-    for var in _API_KEY_VARS:
+def _resolve_api_key() -> tuple[str | None, bool]:
+    """Return ``(key, borrowed)`` for the first API key set in the environment.
+
+    ``borrowed`` is ``True`` when the key came from a sibling tool's variable
+    rather than eidetic's own, which restricts where it may be sent.
+    """
+    explicit = os.environ.get(_EXPLICIT_API_KEY_VAR)
+    if explicit:
+        return explicit, False
+    for var in _BORROWED_API_KEY_VARS:
         key = os.environ.get(var)
         if key:
-            return key
-    return None
+            return key, True
+    return None, False
+
+
+def _is_local_or_encrypted(base_url: str) -> bool:
+    """Return whether *base_url* is loopback or HTTPS.
+
+    Either is a safe destination for a borrowed credential: loopback never
+    leaves the machine, and HTTPS is not readable in transit. `lobes tunnel`
+    publishes the fleet over HTTPS, so remote is legitimate — it is *cleartext
+    to a remote host* that we refuse.
+    """
+    parsed = urllib.parse.urlparse(base_url)
+    if parsed.scheme == "https":
+        return True
+    host = (parsed.hostname or "").lower()
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost" or host.endswith(".localhost")
 
 
 # -----------------------------------------------------------------------
@@ -139,16 +176,55 @@ class EmbedClient:
         self._rerank_model = (
             rerank_model or os.environ.get("EIDETIC_RERANK_MODEL") or _DEFAULT_RERANK_MODEL
         )
-        self._api_key = api_key or _resolve_api_key()
+        # `is None`, not truthiness: an explicit `api_key=""` is a deliberate
+        # "send no Authorization header", and must not fall back to the
+        # environment. A caller-supplied key is never treated as borrowed —
+        # passing it names this client's credential outright.
+        if api_key is None:
+            self._api_key, self._api_key_borrowed = _resolve_api_key()
+        else:
+            self._api_key, self._api_key_borrowed = api_key, False
 
     # -- request helpers ------------------------------------------------
 
+    def _may_send_key(self) -> bool:
+        """Return whether the resolved key may be sent to the configured URL.
+
+        An explicit key always may: the operator named both the credential and
+        the endpoint. A *borrowed* one — taken from a sibling tool's variable
+        that was never paired with eidetic's endpoint — is withheld from a
+        cleartext remote host, so overriding `EIDETIC_EMBED_URL` cannot quietly
+        forward another tool's credential off the machine.
+        """
+        if not self._api_key_borrowed:
+            return True
+        return _is_local_or_encrypted(self._base_url)
+
     def _headers(self) -> dict[str, str]:
-        """Return request headers, adding bearer auth when a key is configured."""
+        """Return request headers, adding bearer auth when a key may be sent."""
         headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+        if not self._api_key:
+            return headers
+        if not self._may_send_key():
+            self._warn_withheld()
+            return headers
+        headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
+
+    def _warn_withheld(self) -> None:
+        """Warn once per process that a borrowed credential was withheld."""
+        global _warned_withheld
+        if _warned_withheld:
+            return
+        _warned_withheld = True
+        print(
+            f"warning: withholding the borrowed API key from {self._base_url} "
+            f"(cleartext remote endpoint); requests will be unauthenticated and "
+            f"may fall back to local lexical scoring.\n"
+            f"hint: set {_EXPLICIT_API_KEY_VAR} to send a credential to this "
+            f"endpoint deliberately, or use an https:// URL.",
+            file=sys.stderr,
+        )
 
     # -- public API -----------------------------------------------------
 

@@ -11,7 +11,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `EIDETIC_RERANK_MODEL` (default `Qwen/Qwen3-Reranker-0.6B`) — the reranker model, resolved independently of `EIDETIC_EMBED_MODEL`.
 - Bearer-token auth for the embed/rerank endpoint, read from `EIDETIC_EMBED_API_KEY`, else `COLLEAGUE_API_KEY`, else `CULTURE_VLLM_API_KEY`. With none set no header is sent, so an unauthenticated endpoint still works.
-- `EmbedClient(rerank_model=..., api_key=...)` constructor arguments.
+- `EmbedClient(rerank_model=..., api_key=...)` constructor arguments. An explicit
+  `api_key=""` forces no `Authorization` header regardless of the environment.
+- Borrowed credentials (`COLLEAGUE_API_KEY` / `CULTURE_VLLM_API_KEY`, which belong
+  to sibling tools) are sent only to a loopback or `https://` endpoint and withheld
+  from a cleartext remote host, warning once on stderr. `EIDETIC_EMBED_API_KEY` is
+  eidetic's own variable and is honoured wherever the endpoint points.
 - docs/contract.md §5 gains `embed_default_rerank_model`; the drift test now covers it across all four surfaces.
 
 ### Changed

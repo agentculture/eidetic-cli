@@ -17,6 +17,9 @@ from eidetic.memory.embed import (
 )
 
 _KEY_VARS = ("EIDETIC_EMBED_API_KEY", "COLLEAGUE_API_KEY", "CULTURE_VLLM_API_KEY")
+# Keys owned by sibling tools: usable as a convenience, but never forwarded to a
+# cleartext remote host (the operator never paired them with eidetic's endpoint).
+_BORROWED_KEY_VARS = ("COLLEAGUE_API_KEY", "CULTURE_VLLM_API_KEY")
 
 
 @pytest.fixture
@@ -149,10 +152,10 @@ def test_remote_rerank_sends_the_rerank_model(
 def test_api_key_resolved_from_each_env_var(
     monkeypatch: pytest.MonkeyPatch, no_env: None, var: str
 ) -> None:
-    """Any of the three key variables authenticates the request."""
+    """Any of the three key variables authenticates a loopback request."""
     monkeypatch.setenv(var, "sekrit")
     seen = _capture(monkeypatch, {"data": [{"index": 0, "embedding": [0.1]}]})
-    EmbedClient(base_url="http://gw/v1").embed(["hi"])
+    EmbedClient(base_url="http://localhost:8001/v1").embed(["hi"])
     assert seen[0].get_header("Authorization") == "Bearer sekrit"
 
 
@@ -161,6 +164,75 @@ def test_api_key_precedence(monkeypatch: pytest.MonkeyPatch, no_env: None) -> No
     monkeypatch.setenv("EIDETIC_EMBED_API_KEY", "mine")
     monkeypatch.setenv("COLLEAGUE_API_KEY", "theirs")
     assert EmbedClient()._api_key == "mine"
+
+
+def test_explicit_empty_api_key_forces_no_auth(
+    monkeypatch: pytest.MonkeyPatch, no_env: None
+) -> None:
+    """`api_key=""` disables auth even when the environment has a key.
+
+    Qodo #1: truthiness (`api_key or _resolve_api_key()`) silently ignored an
+    explicit empty string, making an unauthenticated endpoint unreachable on a
+    box that exports a shared key.
+    """
+    monkeypatch.setenv("COLLEAGUE_API_KEY", "sekrit")
+    seen = _capture(monkeypatch, {"data": [{"index": 0, "embedding": [0.1]}]})
+    EmbedClient(base_url="http://localhost:8001/v1", api_key="").embed(["hi"])
+    assert seen[0].get_header("Authorization") is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8001/v1",
+        "http://127.0.0.1:8001/v1",
+        "http://127.0.0.2:8001/v1",  # the whole 127/8 block is loopback
+        "http://[::1]:8001/v1",
+        "https://gw.example.com/v1",  # encrypted in transit (e.g. lobes tunnel)
+    ],
+)
+@pytest.mark.parametrize("var", _BORROWED_KEY_VARS)
+def test_borrowed_key_sent_to_local_or_encrypted(
+    monkeypatch: pytest.MonkeyPatch, no_env: None, var: str, url: str
+) -> None:
+    """A borrowed key still authenticates loopback and HTTPS endpoints."""
+    monkeypatch.setenv(var, "sekrit")
+    seen = _capture(monkeypatch, {"data": [{"index": 0, "embedding": [0.1]}]})
+    EmbedClient(base_url=url).embed(["hi"])
+    assert seen[0].get_header("Authorization") == "Bearer sekrit"
+
+
+@pytest.mark.parametrize("var", _BORROWED_KEY_VARS)
+def test_borrowed_key_withheld_from_cleartext_remote(
+    monkeypatch: pytest.MonkeyPatch, no_env: None, var: str, capsys: pytest.CaptureFixture
+) -> None:
+    """A sibling tool's key is not forwarded to a cleartext remote host.
+
+    Qodo #2: `EIDETIC_EMBED_URL` is a documented override, so an accidental or
+    hostile value would otherwise ship another tool's credential off the box.
+    """
+    import eidetic.memory.embed as m
+
+    m._warned_withheld = False  # the warning is once-per-process
+    monkeypatch.setenv(var, "sekrit")
+    seen = _capture(monkeypatch, {"data": [{"index": 0, "embedding": [0.1]}]})
+    EmbedClient(base_url="http://evil.example.com/v1").embed(["hi"])
+    assert seen[0].get_header("Authorization") is None
+    # Withholding must not be silent — that would recreate the exact
+    # silent-degradation trap this module is already prone to.
+    assert "withholding the borrowed API key" in capsys.readouterr().err
+
+
+def test_explicit_key_sent_anywhere(monkeypatch: pytest.MonkeyPatch, no_env: None) -> None:
+    """eidetic's own variable is honoured wherever the operator points it.
+
+    Only *borrowed* keys are restricted; setting EIDETIC_EMBED_API_KEY is an
+    explicit statement about this client, so it is not second-guessed.
+    """
+    monkeypatch.setenv("EIDETIC_EMBED_API_KEY", "mine")
+    seen = _capture(monkeypatch, {"data": [{"index": 0, "embedding": [0.1]}]})
+    EmbedClient(base_url="http://remote.example.com/v1").embed(["hi"])
+    assert seen[0].get_header("Authorization") == "Bearer mine"
 
 
 def test_no_auth_header_when_no_key(monkeypatch: pytest.MonkeyPatch, no_env: None) -> None:

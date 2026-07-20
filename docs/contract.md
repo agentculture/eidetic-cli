@@ -138,6 +138,14 @@ The gateway also enforces a **bearer token**, which eidetic reads from
 With no key set the request 401s and eidetic degrades to the lexical fallback —
 same silent-but-not-semantic mode as a wrong port.
 
+The last two are **borrowed**: they belong to sibling tools and are read as a
+convenience, but the operator never paired them with eidetic's endpoint. Since
+`EIDETIC_EMBED_URL` is a documented override (and an injection point for
+consumers like colleague), a borrowed key is sent only to a loopback or
+`https://` endpoint and withheld from a cleartext remote host, warning once on
+stderr. `EIDETIC_EMBED_API_KEY` is eidetic's own variable and carries no such
+restriction — setting it is an explicit statement about this client.
+
 The block above is parsed by `tests/test_embed_default_drift.py` and
 compared against `eidetic/memory/embed.py`'s `_DEFAULT_BASE_URL` /
 `_DEFAULT_MODEL` / `_DEFAULT_RERANK_MODEL` module constants and the literal

@@ -91,6 +91,15 @@ request 401s and eidetic degrades to a deterministic local lexical fallback —
 recall still answers, but not semantically. Only `approximate`/`hybrid` recall
 use the endpoint; `exact`/`keyword` are pure lexical and work fully offline.
 
+**Borrowed credentials are scoped.** `EIDETIC_EMBED_API_KEY` is eidetic's own
+variable — set it and it is sent wherever you point `EIDETIC_EMBED_URL`. The
+other two belong to sibling tools and are *borrowed* so a configured box needs
+no extra setup; because you never paired them with eidetic's endpoint, they are
+sent only to a loopback or `https://` URL and withheld from a cleartext remote
+host (with a one-time warning on stderr). `lobes tunnel` publishes over HTTPS,
+so remote deployments are unaffected. Passing `api_key=""` explicitly disables
+auth regardless of the environment.
+
 **Reference deployment.** The default above is the reference rig's real
 embedder, and it is a single agreed value across every surface — the
 `eidetic/memory/embed.py` code default, the vendored `recall.sh`/`remember.sh`
