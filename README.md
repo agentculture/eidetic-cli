@@ -72,18 +72,45 @@ format upgrade (`migrate store`) is delegated to data-refinery's `store.migrate`
 endpoint, so eidetic constructs no filesystem write path of its own. (Migration
 tracked in eidetic#13 / data-refinery-cli#1; the migrate endpoint in #8.)
 
-Embeddings + rerank come from a separate model-gear HTTP endpoint
-(`EIDETIC_EMBED_URL`, `EIDETIC_EMBED_MODEL` — default
-`http://localhost:8002/v1` + `Qwen/Qwen3-Embedding-0.6B`), with a deterministic
-local lexical fallback when it is absent. Only `approximate`/`hybrid` recall use
-it; `exact`/`keyword` are pure lexical and work fully offline.
+Embeddings + rerank come from a separate HTTP endpoint — the local **lobes fleet
+gateway**, which fronts every role (embedder, reranker, cortex, …) on one
+OpenAI-compatible port. The per-role vLLM containers are *not* published to the
+host, so a per-gear port is always wrong; `lobes endpoint embedder` reports the
+live value.
+
+| Variable | Default |
+|----------|---------|
+| `EIDETIC_EMBED_URL` | `http://localhost:8001/v1` |
+| `EIDETIC_EMBED_MODEL` | `Qwen/Qwen3-Embedding-0.6B` |
+| `EIDETIC_RERANK_MODEL` | `Qwen/Qwen3-Reranker-0.6B` |
+| `EIDETIC_EMBED_API_KEY` | unset — falls back to `COLLEAGUE_API_KEY`, then `CULTURE_VLLM_API_KEY` |
+
+The gateway routes on the request's `model` field, which is why embed and rerank
+name different models. It also enforces a bearer token: with no key set the
+request 401s and eidetic degrades to a deterministic local lexical fallback —
+recall still answers, but not semantically. Only `approximate`/`hybrid` recall
+use the endpoint; `exact`/`keyword` are pure lexical and work fully offline.
+
+**Borrowed credentials are scoped.** `EIDETIC_EMBED_API_KEY` is eidetic's own
+variable — set it and it is sent wherever you point `EIDETIC_EMBED_URL`. The
+other two belong to sibling tools and are *borrowed* so a configured box needs
+no extra setup; because you never paired them with eidetic's endpoint, they are
+sent only to a loopback or `https://` URL and withheld from a cleartext remote
+host (with a one-time warning on stderr). `lobes tunnel` publishes over HTTPS,
+so remote deployments are unaffected. Passing `api_key=""` explicitly disables
+auth regardless of the environment.
 
 **Reference deployment.** The default above is the reference rig's real
-embedder, and it is now a single agreed value across every surface — the
+embedder, and it is a single agreed value across every surface — the
 `eidetic/memory/embed.py` code default, the vendored `recall.sh`/`remember.sh`
 wrapper exports, and this README (eidetic-cli#28 / colleague#293,
 drift-tested by `tests/test_embed_default_drift.py`; see
-[`docs/contract.md`](docs/contract.md) for the machine-readable record). On
+[`docs/contract.md`](docs/contract.md) for the machine-readable record).
+Agreement alone is not correctness: #28 aligned all three surfaces on `:8002`,
+a per-gear container port never published to the host, so every surface agreed
+on an endpoint that always refused — and the lexical fallback hid it. Check
+changes against the live fleet (`lobes endpoint embedder`), not just against
+each other. On
 the AgentCulture mesh, the same endpoint is discoverable rather than
 hardcoded: the `lobes` gateway serves an `embedder` role in its
 `GET /capabilities` response (lobes-cli >= 0.38, where each role's `endpoint`

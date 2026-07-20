@@ -161,9 +161,18 @@ bash .claude/skills/recall/scripts/recall.sh "power" --include-archived --includ
 ## Notes
 
 - **Provenance is mandatory** on every hit — recall is for *cited* answers.
-- The embed endpoint defaults to the local model-gear embed gear
-  (`http://localhost:8002/v1`, model `Qwen/Qwen3-Embedding-0.6B`); override with
-  `EIDETIC_EMBED_URL` / `EIDETIC_EMBED_MODEL`. `exact`/`keyword` ignore it.
+- The embed endpoint defaults to the local **lobes fleet gateway**
+  (`http://localhost:8001/v1`, model `Qwen/Qwen3-Embedding-0.6B`, reranker
+  `Qwen/Qwen3-Reranker-0.6B`); override with `EIDETIC_EMBED_URL` /
+  `EIDETIC_EMBED_MODEL` / `EIDETIC_RERANK_MODEL`. `exact`/`keyword` ignore it.
+  The gateway fronts *every* role on that one port — the per-role vLLM
+  containers are not published to the host, so a per-gear port is always wrong.
+  Confirm the live value with `lobes endpoint embedder`.
+- The gateway enforces a **bearer token**. eidetic reads it from
+  `EIDETIC_EMBED_API_KEY`, else `COLLEAGUE_API_KEY`, else `CULTURE_VLLM_API_KEY`.
+  With none set the request 401s and recall silently degrades to the offline
+  lexical fallback — so `approximate`/`hybrid` still *answer*, but not
+  semantically. If semantic recall looks oddly literal, check the key first.
 - **Use the wrapper, not a bare `eidetic`.** The console script may not be on
   `PATH` (in a dev checkout it isn't) — the wrapper resolves it for you (`PATH`
   first, else `uv run eidetic`). For the docs, run `eidetic explain recall` if
