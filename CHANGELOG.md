@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-07-20
+
+### Added
+
+- `EIDETIC_RERANK_MODEL` (default `Qwen/Qwen3-Reranker-0.6B`) — the reranker model, resolved independently of `EIDETIC_EMBED_MODEL`.
+- Bearer-token auth for the embed/rerank endpoint, read from `EIDETIC_EMBED_API_KEY`, else `COLLEAGUE_API_KEY`, else `CULTURE_VLLM_API_KEY`. With none set no header is sent, so an unauthenticated endpoint still works.
+- `EmbedClient(rerank_model=..., api_key=...)` constructor arguments.
+- docs/contract.md §5 gains `embed_default_rerank_model`; the drift test now covers it across all four surfaces.
+
+### Changed
+
+- docs/contract.md, README.md, and both skill wrappers now note that surface *agreement* is not endpoint *reachability* — verify against the live fleet with `lobes endpoint embedder`.
+
+### Fixed
+
+- Embedder/reranker endpoint default corrected to the lobes fleet gateway (`http://localhost:8001/v1`). eidetic-cli#28 aligned every surface on `:8002`, a per-gear container port that is never published to the host — so all surfaces agreed on an endpoint that always refused. Because `embed_detect()` falls back to a lexical hash vector on any exception, the failure was silent: `approximate`/`hybrid` recall kept answering, just not semantically.
+- `_remote_rerank` posted the *embedding* model to `/v1/rerank`. The gateway routes on the request `model` field, so this misrouted; the reranker gear is now named separately.
+- `EmbedClient` sent no `Authorization` header, so every request to the (auth-enforcing) gateway 401d and degraded to the lexical fallback.
+
 ## [0.11.0] - 2026-07-06
 
 ### Added

@@ -113,23 +113,38 @@ colleague#291 task S2): the embeddings/rerank endpoint default. Three
 surfaces used to state it, and one of them — the `eidetic/memory/embed.py`
 code default — disagreed with the other two (a stale
 `http://localhost:8101/v1` + `text-embedding-3-small` pair, left over from
-before the reference rig moved to its current embedder). The vendored
-`recall.sh`/`remember.sh` wrappers and this repo's own README already
-pointed at the real reference-rig endpoint, and every real invocation
-exported that endpoint before the divergent code default ever got a chance
-to matter — an accidental workaround, not a decision. This section states
-the one, now-agreed value.
+before the reference rig moved to its current embedder).
+
+That alignment settled on `http://localhost:8002/v1` — a **per-gear port that
+was never reachable from the host**. The per-role vLLM containers
+(`model-gear-vllm-embed`, `-rerank`) listen on `:8000` *inside* the container
+network and are not published; only the fleet gateway is bound to the host, and
+it fronts every role on one OpenAI-compatible port. So all three surfaces agreed
+on an endpoint that always refused, and because `embed_detect()` swallows every
+exception in favour of a lexical hash vector, the failure was **silent** —
+`approximate`/`hybrid` recall kept answering, just not semantically. Agreement
+is not correctness; this section now states the value the live fleet reports.
 
 ```text
-embed_default_url: http://localhost:8002/v1
+embed_default_url: http://localhost:8001/v1
 embed_default_model: Qwen/Qwen3-Embedding-0.6B
+embed_default_rerank_model: Qwen/Qwen3-Reranker-0.6B
 ```
+
+The gateway routes on the request's `model` field, which is why embed and rerank
+name different models: posting the embedding model to `/v1/rerank` misroutes.
+The gateway also enforces a **bearer token**, which eidetic reads from
+`EIDETIC_EMBED_API_KEY`, else `COLLEAGUE_API_KEY`, else `CULTURE_VLLM_API_KEY`.
+With no key set the request 401s and eidetic degrades to the lexical fallback —
+same silent-but-not-semantic mode as a wrong port.
 
 The block above is parsed by `tests/test_embed_default_drift.py` and
 compared against `eidetic/memory/embed.py`'s `_DEFAULT_BASE_URL` /
-`_DEFAULT_MODEL` module constants and the literal `:=` default each vendored
-wrapper script exports. A future divergence on any of the three fails that
-test.
+`_DEFAULT_MODEL` / `_DEFAULT_RERANK_MODEL` module constants and the literal
+`:=` default each vendored wrapper script exports. A future divergence on any
+of the three fails that test. **Verify against the live fleet, not just against
+each other** — `lobes endpoint embedder` (or `lobes capabilities`) is the
+authority, and a green drift test only proves the surfaces agree.
 
 **On the AgentCulture mesh, this endpoint is discoverable, not just
 hardcoded.** The `lobes` gateway serves an `embedder` role in its
@@ -181,4 +196,14 @@ never a competing override path.
   how a `lobes`-gateway `embedder` role can supply that same default by live
   discovery. This is unrelated to the scope+visibility convention's own
   `version` field above; retrieval logic, fallback behavior, and timeouts are
+  unchanged.
+- **S3**: corrected [§5](#5-embedder-default-reference-deployment) to the value
+  the live fleet actually serves — `http://localhost:8001/v1`, the lobes fleet
+  gateway. S2 aligned all three surfaces on `:8002`, a per-gear container port
+  never published to the host, so the agreed default always refused and recall
+  degraded silently to the lexical fallback. Also splits the reranker model out
+  of the embedding model (the gateway routes on `model`, so `/v1/rerank` must
+  name the reranker gear) and adds the gateway's bearer token
+  (`EIDETIC_EMBED_API_KEY`, else `COLLEAGUE_API_KEY`, else
+  `CULTURE_VLLM_API_KEY`). Retrieval logic, fallback behavior, and timeouts are
   unchanged.

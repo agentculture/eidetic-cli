@@ -19,17 +19,47 @@ from typing import Any
 # -----------------------------------------------------------------------
 
 # Aligned to the reference deployment documented in README.md and
-# docs/contract.md (eidetic-cli#28 / colleague#293): the vendored
-# `recall.sh`/`remember.sh` wrappers and this project's own README already
-# pointed at the real embedder rig (localhost:8002, Qwen3-Embedding-0.6B) —
-# these code defaults used to diverge from that (a stale localhost:8101 +
-# text-embedding-3-small pair) and only matched by accident of every real
-# invocation exporting the wrapper's override first. Now all three surfaces
-# agree; drift-tested by tests/test_embed_default_drift.py.
-_DEFAULT_BASE_URL = "http://localhost:8002/v1"
+# docs/contract.md; drift-tested by tests/test_embed_default_drift.py.
+#
+# The endpoint is the **lobes fleet gateway**, which fronts every role
+# (cortex/embedder/reranker/...) on ONE OpenAI-compatible port. The per-role
+# vLLM containers (`model-gear-vllm-embed`, `-rerank`) listen on :8000 inside
+# the container network but are NOT published to the host, so any per-gear host
+# port is unreachable. `lobes endpoint embedder` / `lobes capabilities` report
+# the live value.
+#
+# eidetic-cli#28 aligned these constants to :8002 to end a code-vs-wrapper
+# divergence — but :8002 was never host-reachable, so all surfaces agreed on an
+# endpoint that always 401s/refuses. Because embed_detect() swallows every
+# exception and falls back to a lexical hash vector, that failure was silent:
+# `approximate`/`hybrid` recall kept answering, just not semantically.
+_DEFAULT_BASE_URL = "http://localhost:8001/v1"
 _DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+# The gateway routes on the request's `model` field, so /v1/rerank must name the
+# reranker gear — sending the embedding model here misroutes the request.
+_DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
 _EMBED_DIM = 128
 _EMBED_TIMEOUT: float = float(os.environ.get("EIDETIC_EMBED_TIMEOUT", "10"))
+
+# The gateway enforces a bearer token. Checked in order; the first set wins.
+# `EIDETIC_EMBED_API_KEY` is eidetic's own name; the others are the deployment
+# variables the local fleet already exports, so a configured box needs no extra
+# setup. Absent all three we send no header — an unauthenticated gateway (or a
+# plain vLLM endpoint) still works, and a 401 degrades to the lexical fallback.
+_API_KEY_VARS = (
+    "EIDETIC_EMBED_API_KEY",
+    "COLLEAGUE_API_KEY",
+    "CULTURE_VLLM_API_KEY",
+)
+
+
+def _resolve_api_key() -> str | None:
+    """Return the first API key set among :data:`_API_KEY_VARS`, else ``None``."""
+    for var in _API_KEY_VARS:
+        key = os.environ.get(var)
+        if key:
+            return key
+    return None
 
 
 # -----------------------------------------------------------------------
@@ -95,11 +125,30 @@ def _local_embed(text: str, dim: int = _EMBED_DIM) -> list[float]:
 class EmbedClient:
     """Client for remote embeddings with offline fallback."""
 
-    def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        rerank_model: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
         self._base_url = (
             base_url or os.environ.get("EIDETIC_EMBED_URL") or _DEFAULT_BASE_URL
         ).rstrip("/")
         self._model = model or os.environ.get("EIDETIC_EMBED_MODEL") or _DEFAULT_MODEL
+        self._rerank_model = (
+            rerank_model or os.environ.get("EIDETIC_RERANK_MODEL") or _DEFAULT_RERANK_MODEL
+        )
+        self._api_key = api_key or _resolve_api_key()
+
+    # -- request helpers ------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        """Return request headers, adding bearer auth when a key is configured."""
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     # -- public API -----------------------------------------------------
 
@@ -143,7 +192,7 @@ class EmbedClient:
         req = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
             method="POST",
         )
         with urllib.request.urlopen(
@@ -161,7 +210,7 @@ class EmbedClient:
         url = f"{self._base_url}/rerank"
         payload = json.dumps(
             {
-                "model": self._model,
+                "model": self._rerank_model,
                 "query": query,
                 "documents": docs,
             }
@@ -169,7 +218,7 @@ class EmbedClient:
         req = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
             method="POST",
         )
         with urllib.request.urlopen(
