@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-07-20
+
+### Added
+
+- Vendored four devague-origin agent skills into `.claude/skills/`, copied verbatim from their origin working trees (cite-don't-import): `scope` (explore what an idea touches before framing a spec), `challenge` (risk-scaled blind-spot pass between /think and /spec-to-plan), `deviate` (record an approved mid-run departure from a confirmed plan), and `summarize-delivery` (planned-vs-actual delivery accountability). These complete this repo's copy of the shared devague planning arc so the resident agent carries the same kit as its mesh peers.
+
 ## [0.12.0] - 2026-07-20
 
 ### Added
