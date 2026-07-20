@@ -8,6 +8,13 @@ constants silently disagreed with the other two (a stale
 `http://localhost:8101/v1` + `text-embedding-3-small` pair) — this test is the
 guard that keeps all three in sync going forward. A future edit that changes
 any ONE of these three without updating the others fails this test.
+
+Note what this test does NOT prove. #28 made all three agree on
+`http://localhost:8002/v1` — a per-gear port never published to the host, so the
+agreed value always refused and recall silently fell back to lexical hashing.
+The endpoint is the lobes fleet gateway (`:8001`), which fronts every role on
+one port. Agreement is not reachability: when changing these, verify against the
+live fleet with `lobes endpoint embedder`, not just against each other.
 """
 
 from __future__ import annotations
@@ -57,23 +64,32 @@ def _wrapper_default(script_path: Path, var_name: str) -> str:
 
 def test_contract_declares_embed_defaults() -> None:
     fields = _parse_embed_block(CONTRACT.read_text(encoding="utf-8"))
-    assert fields["embed_default_url"] == "http://localhost:8002/v1"
+    assert fields["embed_default_url"] == "http://localhost:8001/v1"
     assert fields["embed_default_model"] == "Qwen/Qwen3-Embedding-0.6B"
+    assert fields["embed_default_rerank_model"] == "Qwen/Qwen3-Reranker-0.6B"
 
 
 def test_embed_py_code_default_matches_contract() -> None:
     fields = _parse_embed_block(CONTRACT.read_text(encoding="utf-8"))
     assert embed._DEFAULT_BASE_URL == fields["embed_default_url"]
     assert embed._DEFAULT_MODEL == fields["embed_default_model"]
+    assert embed._DEFAULT_RERANK_MODEL == fields["embed_default_rerank_model"]
 
 
 def test_recall_wrapper_default_matches_contract() -> None:
     fields = _parse_embed_block(CONTRACT.read_text(encoding="utf-8"))
     assert _wrapper_default(RECALL_SH, "EIDETIC_EMBED_URL") == fields["embed_default_url"]
     assert _wrapper_default(RECALL_SH, "EIDETIC_EMBED_MODEL") == fields["embed_default_model"]
+    assert (
+        _wrapper_default(RECALL_SH, "EIDETIC_RERANK_MODEL") == fields["embed_default_rerank_model"]
+    )
 
 
 def test_remember_wrapper_default_matches_contract() -> None:
     fields = _parse_embed_block(CONTRACT.read_text(encoding="utf-8"))
     assert _wrapper_default(REMEMBER_SH, "EIDETIC_EMBED_URL") == fields["embed_default_url"]
     assert _wrapper_default(REMEMBER_SH, "EIDETIC_EMBED_MODEL") == fields["embed_default_model"]
+    assert (
+        _wrapper_default(REMEMBER_SH, "EIDETIC_RERANK_MODEL")
+        == fields["embed_default_rerank_model"]
+    )

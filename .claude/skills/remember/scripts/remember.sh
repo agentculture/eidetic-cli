@@ -158,12 +158,20 @@ if ! has_flag --scope "$@"; then
     # privacy downgrade here either way.
 fi
 
-# As of eidetic-cli#28 (colleague#293) these values now match eidetic's own
-# code default in eidetic/memory/embed.py, so this export is a redundant-but-
-# harmless belt-and-suspenders default kept for explicitness and for older
-# eidetic installs that predate the code-default alignment.
-: "${EIDETIC_EMBED_URL:=http://localhost:8002/v1}"
+# The endpoint is the lobes fleet gateway, which fronts every role on ONE
+# OpenAI-compatible port; the per-role vLLM containers are not published to the
+# host, so a per-gear port is unreachable (`lobes endpoint embedder` confirms
+# the live value). eidetic-cli#28 aligned these to :8002, which matched the code
+# default but was never host-reachable. These values match eidetic's own code
+# default in eidetic/memory/embed.py, so this export is a redundant-but-harmless
+# belt-and-suspenders default kept for explicitness and for older eidetic
+# installs that predate the code-default alignment. The bearer token the gateway
+# requires is read by eidetic from EIDETIC_EMBED_API_KEY / COLLEAGUE_API_KEY /
+# CULTURE_VLLM_API_KEY — deliberately not set here, so no secret passes through
+# this wrapper.
+: "${EIDETIC_EMBED_URL:=http://localhost:8001/v1}"
 : "${EIDETIC_EMBED_MODEL:=Qwen/Qwen3-Embedding-0.6B}"
-export EIDETIC_EMBED_URL EIDETIC_EMBED_MODEL
+: "${EIDETIC_RERANK_MODEL:=Qwen/Qwen3-Reranker-0.6B}"
+export EIDETIC_EMBED_URL EIDETIC_EMBED_MODEL EIDETIC_RERANK_MODEL
 
 exec "${EIDETIC[@]}" remember "${SCOPE_ARGS[@]}" "$@"
