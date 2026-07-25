@@ -59,6 +59,15 @@ def _run(argv: list[str], *, cwd: Path, env: dict) -> subprocess.CompletedProces
     )
 
 
+def _hits(proc: subprocess.CompletedProcess[str]) -> list[dict]:
+    """Return the items of a ``recall --json`` composite bundle.
+
+    ``recall --json`` emits ONE object — ``{query, mode, truncated, items}`` —
+    where each item is a full record plus its ``tier``/``depth`` labels.
+    """
+    return json.loads(proc.stdout)["items"]
+
+
 def _pin_eidetic_on_path(env: dict) -> dict:
     """Pin the wrapper's ``command -v eidetic`` resolution to THIS checkout's
     console script (the same code as ``python -m eidetic``), by prepending the
@@ -170,7 +179,7 @@ def test_wrapper_and_raw_cli_default_to_the_same_visibility(tmp_path: Path) -> N
         env=env,
     )
     assert recall_result.returncode == 0, recall_result.stderr
-    hits = json.loads(recall_result.stdout)
+    hits = _hits(recall_result)
     ids = {h["id"] for h in hits}
     assert "wrap-conv-1" in ids, "wrapper's record is invisible to a plain public recall"
     assert "raw-conv-1" in ids
@@ -214,7 +223,7 @@ def test_recall_wrapper_sees_remember_wrapper_records_with_no_flags(tmp_path: Pa
         env=env,
     )
     assert recall_result.returncode == 0, recall_result.stderr
-    hits = json.loads(recall_result.stdout)
+    hits = _hits(recall_result)
     ids = {h["id"] for h in hits}
     assert "wrap-roundtrip-1" in ids
 

@@ -336,7 +336,7 @@ def test_remember_json_output_is_valid(tmp_store: str, monkeypatch, capsys) -> N
 
 
 def test_recall_json_output_is_valid(tmp_store: str, monkeypatch, capsys) -> None:
-    """eidetic recall --json emits valid JSON list to stdout."""
+    """eidetic recall --json emits the valid composite bundle object to stdout."""
     monkeypatch.setenv("EIDETIC_DATA_DIR", tmp_store)
 
     # First, remember a record (text mode is fine for ingest).
@@ -363,12 +363,17 @@ def test_recall_json_output_is_valid(tmp_store: str, monkeypatch, capsys) -> Non
 
     assert rc == 0
     out = capsys.readouterr().out
-    payload = json.loads(out)  # Must be a valid JSON list.
-    assert isinstance(payload, list)
-    if payload:
-        assert "id" in payload[0]
-        assert "text" in payload[0]
-        assert "score" in payload[0]
+    payload = json.loads(out)  # Must be a valid JSON bundle object.
+    assert isinstance(payload, dict)
+    assert set(payload) == {"query", "mode", "truncated", "items"}
+    assert isinstance(payload["items"], list)
+    if payload["items"]:
+        first = payload["items"][0]
+        assert "id" in first
+        assert "text" in first
+        assert "score" in first
+        assert first["tier"] == "primary"
+        assert first["depth"] == 0
 
 
 def test_error_json_shape_on_stderr(tmp_store: str, monkeypatch, capsys) -> None:

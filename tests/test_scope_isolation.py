@@ -101,7 +101,7 @@ def test_recall_public_scope_via_verb_excludes_private(data_dir: str, capsys) ->
     args = parser.parse_args(["recall", "shared keyword", "--scope", "default", "--json"])
     args.func(args)
     out = capsys.readouterr().out
-    hits = json.loads(out)
+    hits = json.loads(out)["items"]
 
     for hit in hits:
         assert hit["scope"]["name"] != "secret"
@@ -119,7 +119,7 @@ def test_recall_private_scope_via_verb_returns_private(data_dir: str, capsys) ->
     )
     args.func(args)
     out = capsys.readouterr().out
-    hits = json.loads(out)
+    hits = json.loads(out)["items"]
 
     ids = [h["id"] for h in hits]
     assert "priv1" in ids

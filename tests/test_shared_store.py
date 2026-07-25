@@ -35,6 +35,15 @@ def _cli(
     )
 
 
+def _hits(proc: subprocess.CompletedProcess[str]) -> list[dict]:
+    """Return the items of a ``recall --json`` composite bundle.
+
+    ``recall --json`` emits ONE object — ``{query, mode, truncated, items}`` —
+    where each item is a full record plus its ``tier``/``depth`` labels.
+    """
+    return json.loads(proc.stdout)["items"]
+
+
 # ------------------------------------------------------------------
 # 1. Cross-invocation round-trip: write in one subprocess, read in another
 # ------------------------------------------------------------------
@@ -79,7 +88,7 @@ def test_cross_invocation_roundtrip_text_metadata_score(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0, f"recall failed: {result.stderr}"
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
 
     # Find the remembered record in the hits
     hit = next((h for h in hits if h["id"] == "t8-crossinvoke-1"), None)
@@ -159,7 +168,7 @@ def test_cross_invocation_multiple_records_scoped(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
 
     hit_ids = {h["id"] for h in hits}
     assert "t8-scope-public-1" in hit_ids
@@ -180,7 +189,7 @@ def test_cross_invocation_multiple_records_scoped(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    private_hits = json.loads(result.stdout)
+    private_hits = _hits(result)
 
     private_hit_ids = {h["id"] for h in private_hits}
     assert "t8-scope-private-1" in private_hit_ids, "private recall must return private record"
@@ -331,7 +340,7 @@ def test_two_agents_share_same_store(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
 
     hit_ids = {h["id"] for h in hits}
 
@@ -400,7 +409,7 @@ def test_two_agents_metadata_isolation_within_shared_store(tmp_path: Path) -> No
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
 
     # Find each record
     a_hit = next((h for h in hits if h["id"] == "agent-a-custom-1"), None)
