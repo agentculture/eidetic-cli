@@ -24,6 +24,8 @@ from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.memory.backend import Backend, get_backend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
+from eidetic.memory.scoring import DECAY
+from eidetic.memory.traverse import TraversalNode
 
 
 def _make_record(
@@ -552,25 +554,146 @@ def test_traversal_skips_shadowed_and_archived_neighbours(data_dir: str, capsys)
 
 
 # ---------------------------------------------------------------------------
-# t4 — reinforcement stays exactly as it was (graded bumps are t5's scope)
+# t5 — graded reinforcement: full bump for primary, DECAY**depth for traversal
 # ---------------------------------------------------------------------------
 
 
-def test_primary_hits_still_reinforce_and_traversal_items_do_not_yet(
-    data_dir: str, linked: None, capsys
-) -> None:
-    """t4 boundary: primary hits bump as they always did; traversal items do not.
+def test_bump_amount_is_full_for_primary_and_decays_by_depth() -> None:
+    """Unit-level: the bump formula itself, independent of any store/CLI wiring."""
+    assert recall._bump_amount(0) == 1.0
+    assert recall._bump_amount(1) == DECAY
+    assert recall._bump_amount(2) == DECAY**2 == 0.25
+    assert recall._bump_amount(3) == DECAY**3 == 0.125
 
-    Graded (fractional, depth-decayed) reinforcement of traversal discoveries
-    is task t5 — this assertion pins the untouched t4 behaviour so the change
-    is visible when t5 lands.
+
+def test_graded_bumps_persist_exact_values(data_dir: str, linked: None, capsys) -> None:
+    """Persistence test: read the EXACT stored values back, not the emitted payload.
+
+    ``linked`` gives chain0 --links--> chain1 --links--> chain2, plus
+    chain0 --supersedes--> older. At --depth 2 every one of those four is
+    reached: chain0 as the primary hit (depth 0), chain1 and older at hop
+    depth 1, chain2 at hop depth 2. The emitted bundle is deliberately
+    pre-bump (see the module docstring), so this test bypasses the payload
+    and asserts against a fresh backend read.
     """
-    _recall_bundle(capsys, "quokka", "--mode", "keyword")
+    _recall_bundle(capsys, "quokka", "--mode", "keyword", "--depth", "2")
+    stored = {r.id: r for r in get_backend("files").all()}
+
+    assert stored["chain0"].recall_count == 1.0, "primary hit bumps by the full 1.0"
+    assert stored["chain0"].last_recall is not None
+
+    assert stored["chain1"].recall_count == DECAY, "depth-1 traversal bumps by DECAY**1"
+    assert stored["chain1"].last_recall is not None
+
+    assert stored["older"].recall_count == DECAY, "a depth-1 supersedes discovery bumps the same"
+    assert stored["older"].last_recall is not None
+
+    assert stored["chain2"].recall_count == DECAY**2 == 0.25, "depth-2 traversal bumps by DECAY**2"
+    assert stored["chain2"].last_recall is not None
+
+
+def test_depth_two_traversal_bump_is_exactly_a_quarter(data_dir: str, linked: None, capsys) -> None:
+    """Discriminating: fails a flat fractional bump (e.g. always 0.5 regardless of depth).
+
+    A buggy implementation that bumps every traversal discovery by a flat
+    0.5 would pass a "less than 1.0" check but fails THIS exact-value
+    assertion, because a flat bump gives chain2 0.5, not 0.25. Verified by
+    temporarily hardcoding ``_bump_amount`` to return 0.5 for any depth > 0
+    and confirming this assertion fails (see the t5 build report).
+    """
+    _recall_bundle(capsys, "quokka", "--mode", "keyword", "--depth", "2")
+    stored = {r.id: r for r in get_backend("files").all()}
+    assert stored["chain2"].recall_count == 0.25
+    assert stored["chain2"].recall_count != 0.5
+
+
+def test_depth_zero_bumps_only_primary_hits(data_dir: str, linked: None, capsys) -> None:
+    """``--depth 0`` reproduces exactly the pre-t5 behaviour: primary-only bumps."""
+    _recall_bundle(capsys, "quokka", "--mode", "keyword", "--depth", "0")
     stored = {r.id: r for r in get_backend("files").all()}
     assert stored["chain0"].recall_count == 1
     assert stored["chain0"].last_recall is not None
     assert stored["chain1"].recall_count == 0
     assert stored["chain1"].last_recall is None
+    assert stored["chain2"].recall_count == 0
+    assert stored["chain2"].last_recall is None
+    assert stored["older"].recall_count == 0
+    assert stored["older"].last_recall is None
+
+
+def test_lifecycle_excluded_neighbour_gets_no_bump_at_all(data_dir: str, capsys) -> None:
+    """A neighbour hidden by lifecycle filtering is never a reinforcement target."""
+    backend = get_backend("files")
+    backend.upsert(
+        _make_record(
+            "lc-rseed", "ibex census reinforcement", links=["lc-rshadowed", "lc-rarchived"]
+        )
+    )
+    shadowed = _make_record("lc-rshadowed", "shadowed reinforcement neighbour")
+    shadowed.lifecycle = "shadowed"
+    backend.upsert(shadowed)
+    archived = _make_record("lc-rarchived", "archived reinforcement neighbour")
+    archived.lifecycle = "archived"
+    backend.upsert(archived)
+
+    _recall_bundle(capsys, "ibex census reinforcement", "--mode", "keyword")
+
+    stored = {r.id: r for r in get_backend("files").all()}
+    assert stored["lc-rshadowed"].recall_count == 0
+    assert stored["lc-rshadowed"].last_recall is None
+    assert stored["lc-rarchived"].recall_count == 0
+    assert stored["lc-rarchived"].last_recall is None
+    # And the visible seed IS reinforced, so the test isn't vacuous.
+    assert stored["lc-rseed"].recall_count == 1.0
+
+
+def test_scope_excluded_neighbour_gets_no_bump_at_all(
+    data_dir: str, linked_private: None, capsys
+) -> None:
+    """A private record excluded by the no-leak guard is never reinforced either."""
+    _recall_bundle(capsys, "narwhal", "--mode", "keyword", "--depth", "3")
+    stored = {r.id: r for r in get_backend("files").all()}
+    assert stored["priv-linked"].recall_count == 0
+    assert stored["priv-linked"].last_recall is None
+    # And the public seed IS reinforced, so the test isn't vacuous.
+    assert stored["pub-seed"].recall_count == 1.0
+
+
+def test_reinforcement_targets_dedups_primary_over_traversal() -> None:
+    """Unit-level dedup rule: a record reachable both ways bumps once, at depth 0.
+
+    This exercises ``_reinforcement_targets`` directly with a contrived
+    ``TraversalNode`` that collides with a primary hit's id — a scenario the
+    traversal engine's own visited-seed bookkeeping already prevents from
+    arising naturally (see ``test_bundle_reachable_via_both_tiers_bumps_once``
+    for the end-to-end version), but the reinforcement step defends against it
+    independently rather than trusting that invariant alone.
+    """
+    shared = _make_record("shared", "both a hit and a neighbour")
+    other_seed = _make_record("s2", "unrelated seed")
+    colliding_node = TraversalNode(record=shared, depth=2, via="links")
+    only_node = TraversalNode(record=_make_record("only", "traversal-only"), depth=1, via="links")
+
+    targets = recall._reinforcement_targets([shared, other_seed], [colliding_node, only_node])
+
+    by_id = {record.id: depth for record, depth in targets}
+    assert by_id == {"shared": 0, "s2": 0, "only": 1}, "shared must win at depth 0 (primary), once"
+
+
+def test_bundle_reachable_via_both_tiers_bumps_once(data_dir: str, capsys) -> None:
+    """A record that is both a primary hit and a link target of another primary
+    hit is bumped exactly once, at the full primary amount — never twice, and
+    never at the decayed traversal amount.
+    """
+    backend = get_backend("files")
+    backend.upsert(_make_record("both-a", "wombat sighting alpha", links=["both-b"]))
+    backend.upsert(_make_record("both-b", "wombat sighting beta"))
+
+    _recall_bundle(capsys, "wombat sighting", "--mode", "keyword")
+
+    stored = {r.id: r for r in get_backend("files").all()}
+    assert stored["both-a"].recall_count == 1.0
+    assert stored["both-b"].recall_count == 1.0, "both-b matched search too, so it bumps as primary"
 
 
 # ---------------------------------------------------------------------------

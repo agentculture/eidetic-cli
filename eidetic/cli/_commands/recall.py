@@ -46,8 +46,8 @@ from eidetic.cli._output import emit_result
 from eidetic.memory.backend import BACKEND_CHOICES, Backend, get_backend
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope, can_serve
-from eidetic.memory.scoring import signal_strength
-from eidetic.memory.traverse import TraversalResult, discover
+from eidetic.memory.scoring import DECAY, signal_strength
+from eidetic.memory.traverse import TraversalNode, TraversalResult, discover
 
 # Caller-stated traversal bounds. Safe defaults: one hop out, twenty records.
 DEFAULT_DEPTH = 1
@@ -223,6 +223,39 @@ def _traverse(
     return discover(seeds, fetch, predicate, depth, max_nodes)
 
 
+def _bump_amount(depth: int) -> float:
+    """Reinforcement bump for a record recalled at hop *depth* (0 = primary hit).
+
+    A primary hit (``depth <= 0``) reinforces fully; a traversal discovery
+    decays by :data:`~eidetic.memory.scoring.DECAY` per hop (depth 1 -> 0.5,
+    depth 2 -> 0.25, ...), so a background neighbourhood fetch does not age a
+    record as aggressively as a deliberate foreground hit, while a record
+    that keeps turning up adjacent to relevant matches is still recognised
+    as genuinely used.
+    """
+    if depth <= 0:
+        return 1.0
+    return DECAY**depth
+
+
+def _reinforcement_targets(
+    hits: list[Record], nodes: list[TraversalNode]
+) -> list[tuple[Record, int]]:
+    """Return the (record, depth) pairs to reinforce, each record id once.
+
+    Primary hits (depth 0) are collected first and win any id collision with
+    a traversal discovery of the SAME record — the traversal engine's own
+    visited-seed bookkeeping already keeps a primary hit's id out of *nodes*,
+    but resolving the collision here too means a record reachable both ways
+    is still bumped exactly once, at the fuller (primary) amount, rather than
+    risking a double write to the store.
+    """
+    targets: dict[str, tuple[Record, int]] = {hit.id: (hit, 0) for hit in hits}
+    for node in nodes:
+        targets.setdefault(node.record.id, (node.record, node.depth))
+    return list(targets.values())
+
+
 def _bundle_item(record: Record, tier: str, depth: int) -> dict[str, Any]:
     """Serialise *record* as a bundle item: every record field plus tier + depth."""
     item = record.to_dict()
@@ -335,12 +368,15 @@ def cmd_recall(args: argparse.Namespace) -> int:
     # Passive reinforcement: bump recall_count and last_recall on COPIES and
     # persist via upsert.  We use copies so the already-emitted objects (above)
     # are untouched — their recall_count / last_recall remain at the pre-bump
-    # values, keeping this call's emitted payload stable.  Only primary hits are
-    # reinforced here; graded bumps for traversal discoveries are task t5.
+    # values, keeping this call's emitted payload stable.  Primary hits bump by
+    # the full 1.0; traversal discoveries bump by the graded, depth-decayed
+    # amount (_bump_amount).  A record excluded by scope or lifecycle never
+    # reaches `hits` or `traversal.nodes` in the first place, so it is never a
+    # reinforcement target — no separate check is needed here.
     now_iso = now.isoformat()
-    for hit in hits:
-        bumped = copy.copy(hit)
-        bumped.recall_count = hit.recall_count + 1
+    for record, depth in _reinforcement_targets(hits, traversal.nodes):
+        bumped = copy.copy(record)
+        bumped.recall_count = record.recall_count + _bump_amount(depth)
         bumped.last_recall = now_iso
         # Query-time fields must never be persisted: `score` is recall-output
         # only, and `signal` is recomputed on every recall.  Clear them on the
