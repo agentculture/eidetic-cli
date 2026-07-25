@@ -33,7 +33,13 @@ Commands
   eidetic-cli remember           Ingest memory records (JSON or NDJSON).
                                  Auto-stamps added_by from the mesh nick;
                                  override with --added-by <nick>.
-  eidetic-cli recall             Search the memory store.
+  eidetic-cli recall             Search the memory store; returns a composite
+                                 bundle (primary hits + a bounded links/
+                                 supersedes traversal), not a bare list.
+                                 --depth (default 1) / --max-nodes (default
+                                 20) bound the traversal; --depth 0 gives a
+                                 flat, primary-only bundle. --source filters
+                                 metadata.source across both tiers.
   eidetic-cli sweep              Apply lifecycle transitions (shadow/archive).
   eidetic-cli migrate qq         Import legacy QQ memory (files/mongo/neo4j).
   eidetic-cli migrate store      Upgrade store format (Record -> Envelope JSONL).
@@ -41,11 +47,15 @@ Commands
 
 Record fields (selected)
 ------------------------
-  added_by   Agent nick that ingested the record. Auto-stamped by `remember`
-             from the mesh identity (culture.yaml suffix); override with
-             --added-by <value> or embed in the JSON payload. Preserved
-             verbatim on recall. Used by `overview` to compute per-scope
-             contributor lists (union of added_by + metadata.author).
+  added_by     Agent nick that ingested the record. Auto-stamped by `remember`
+               from the mesh identity (culture.yaml suffix); override with
+               --added-by <value> or embed in the JSON payload. Preserved
+               verbatim on recall. Used by `overview` to compute per-scope
+               contributor lists (union of added_by + metadata.author).
+  recall_count int | float. Bumped by every `recall` hit: +1.0 for a primary
+               hit, +DECAY**depth (DECAY=0.5) for a traversal-discovered
+               record — so a record touched only via traversal can carry a
+               fractional count.
 
 Machine-readable output
 -----------------------
@@ -89,7 +99,16 @@ def _as_json_payload() -> dict[str, object]:
                     "Auto-stamps added_by from mesh nick; override with --added-by."
                 ),
             },
-            {"path": ["recall"], "summary": "Search the memory store."},
+            {
+                "path": ["recall"],
+                "summary": (
+                    "Search the memory store; returns a composite bundle (primary hits + "
+                    "a bounded links/supersedes traversal), not a bare list. --depth "
+                    "(default 1) / --max-nodes (default 20) bound the traversal; --depth 0 "
+                    "gives a flat, primary-only bundle. --source filters metadata.source "
+                    "across both tiers."
+                ),
+            },
             {"path": ["sweep"], "summary": "Apply lifecycle transitions (shadow/archive)."},
             {"path": ["migrate", "qq"], "summary": "Import legacy QQ memory."},
             {
@@ -104,6 +123,11 @@ def _as_json_payload() -> dict[str, object]:
                 "from the mesh identity (culture.yaml suffix); override with "
                 "--added-by <value> or embed in the JSON payload. "
                 "Used by `overview` to compute per-scope contributor lists."
+            ),
+            "recall_count": (
+                "int | float. Bumped by every `recall` hit: +1.0 for a primary hit, "
+                "+DECAY**depth (DECAY=0.5) for a traversal-discovered record — a record "
+                "touched only via traversal can carry a fractional count."
             ),
         },
         "exit_codes": {
