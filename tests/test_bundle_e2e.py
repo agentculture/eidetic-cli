@@ -477,7 +477,7 @@ def test_the_e2e_run_never_touches_the_real_repo_or_home_store(
     assert set(_stored()) == _ALL_IDS
     assert not (store.home / ".eidetic").exists()
 
+    after = (_fingerprint(_REAL_HOME_STORE), _fingerprint(_REAL_REPO_STORE))
     assert (
-        _fingerprint(_REAL_HOME_STORE),
-        _fingerprint(_REAL_REPO_STORE),
-    ) == before, "the real home/repo stores changed during the test — isolation is broken"
+        after == before
+    ), "the real home/repo stores changed during the test — isolation is broken"
