@@ -458,42 +458,51 @@ class StoreBackend:
         """
         if not ids:
             return {}
-        if self._name == "files":
-            seen: dict[str, Record] = {}
-            for d in _candidate_read_dirs():
-                _bridge_env("files", data_dir=d)
-                with _translate_errors():
-                    for rid in ids:
-                        env = drstore.get(
-                            rid,
-                            scope=DRScope(name=scope.name, visibility=scope.visibility),
-                            backend="files",
-                            **self._kwargs,
-                        )
-                        if env is None:
-                            continue
-                        r = record_from_envelope(env)
-                        if not can_serve(scope, r.scope):
-                            continue
-                        seen.setdefault(rid, r)
-            candidates = seen
-        else:
-            _bridge_env(self._name)
-            candidates = {}
+        found: dict[str, Record] = {}
+        for data_dir in self._lookup_dirs():
+            self._bridge_for_lookup(data_dir)
             with _translate_errors():
-                for rid in ids:
-                    env = drstore.get(
-                        rid,
-                        scope=DRScope(name=scope.name, visibility=scope.visibility),
-                        backend=self._name,
-                        **self._kwargs,
-                    )
-                    if env is None:
-                        continue
-                    r = record_from_envelope(env)
-                    if can_serve(scope, r.scope):
-                        candidates[rid] = r
-        return candidates
+                self._collect_serveable(ids, scope, found)
+        return found
+
+    def _lookup_dirs(self) -> list[str | None]:
+        """Store dirs to sweep for an id lookup; ``[None]`` means a single store."""
+        if self._name == "files":
+            return list(_candidate_read_dirs())
+        return [None]
+
+    def _bridge_for_lookup(self, data_dir: str | None) -> None:
+        if data_dir is None:
+            _bridge_env(self._name)
+        else:
+            _bridge_env("files", data_dir=data_dir)
+
+    def _collect_serveable(self, ids: list[str], scope: Scope, found: dict[str, Record]) -> None:
+        """Add every id the bridged store can serve to *found*; first dir wins.
+
+        ``can_serve`` gates entry into *found*, so a non-serveable copy never
+        claims an id's slot and can never shadow a serveable copy living in a
+        later store dir.
+        """
+        for rid in ids:
+            if rid in found:
+                continue
+            record = self._fetch_serveable(rid, scope)
+            if record is not None:
+                found[rid] = record
+
+    def _fetch_serveable(self, rid: str, scope: Scope) -> Record | None:
+        """One id from the bridged store, or ``None`` if absent or not serveable."""
+        env = drstore.get(
+            rid,
+            scope=DRScope(name=scope.name, visibility=scope.visibility),
+            backend=self._name,
+            **self._kwargs,
+        )
+        if env is None:
+            return None
+        record = record_from_envelope(env)
+        return record if can_serve(scope, record.scope) else None
 
 
 # ---------------------------------------------------------------------------

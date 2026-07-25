@@ -28,7 +28,11 @@ re-queued, so cycles terminate naturally.
 
 Whenever a bound (``max_depth`` or ``max_nodes``) genuinely stops the walk
 short of material that was there to find, :attr:`TraversalResult.truncated` is
-set — the walk never cuts silently.
+set — the walk never cuts silently. "Genuinely" is load-bearing: at the depth
+bound each unvisited edge is resolved and admission-tested before it counts as
+truncation, so a dangling id or a record the predicate rejects never inflates
+the flag, and ``truncated`` never becomes a side channel announcing that
+out-of-scope material exists.
 """
 
 from __future__ import annotations
@@ -99,29 +103,73 @@ def discover(
     queue: deque[tuple[Record, int]] = deque((seed, 0) for seed in seeds)
     nodes: list[TraversalNode] = []
     truncated = False
-    stopped = False
 
-    while queue and not stopped:
+    while queue:
         parent, depth = queue.popleft()
         if depth >= max_depth:
-            if any(rid not in visited for rid, _kind in _edges(parent)):
-                truncated = True
+            truncated = truncated or _has_admissible_beyond(parent, visited, fetch, can_serve)
             continue
-        for rid, kind in _edges(parent):
-            if rid in visited:
-                continue
-            candidate = fetch(rid)
-            if candidate is None:
-                continue
-            visited.add(rid)
-            if not can_serve(candidate):
-                continue
-            if len(nodes) >= max_nodes:
-                truncated = True
-                stopped = True
-                break
-            child_depth = depth + 1
-            nodes.append(TraversalNode(record=candidate, depth=child_depth, via=kind))
-            queue.append((candidate, child_depth))
+        admitted, hit_budget = _expand(
+            parent, depth, visited, fetch, can_serve, max_nodes - len(nodes)
+        )
+        nodes.extend(admitted)
+        queue.extend((node.record, node.depth) for node in admitted)
+        if hit_budget:
+            return TraversalResult(nodes=nodes, truncated=True)
 
     return TraversalResult(nodes=nodes, truncated=truncated)
+
+
+def _has_admissible_beyond(
+    record: Record,
+    visited: set[str],
+    fetch: Callable[[str], Record | None],
+    can_serve: Callable[[Record], bool],
+) -> bool:
+    """Whether *record* has an unvisited edge the caller could actually have seen.
+
+    The depth bound only *truncates* if it stopped the walk short of material
+    that was genuinely there to find, so each unvisited edge is resolved and
+    admission-tested rather than merely counted: a dangling id, or a record the
+    predicate would reject, was never visible material and cutting before it
+    cuts nothing. This also keeps ``truncated`` from acting as a side channel —
+    a private record beyond the bound must not make a public bundle announce
+    that something was withheld.
+    """
+    for rid, _kind in _edges(record):
+        if rid in visited:
+            continue
+        candidate = fetch(rid)
+        if candidate is not None and can_serve(candidate):
+            return True
+    return False
+
+
+def _expand(
+    parent: Record,
+    depth: int,
+    visited: set[str],
+    fetch: Callable[[str], Record | None],
+    can_serve: Callable[[Record], bool],
+    budget: int,
+) -> tuple[list[TraversalNode], bool]:
+    """Admissible children of *parent*, and whether *budget* stopped the walk.
+
+    ``can_serve`` is consulted for every candidate at every depth — a rejected
+    record is neither admitted nor expanded, so it can never act as a transit
+    node to material the caller may not see.
+    """
+    admitted: list[TraversalNode] = []
+    for rid, kind in _edges(parent):
+        if rid in visited:
+            continue
+        candidate = fetch(rid)
+        if candidate is None:
+            continue
+        visited.add(rid)
+        if not can_serve(candidate):
+            continue
+        if len(admitted) >= budget:
+            return admitted, True
+        admitted.append(TraversalNode(record=candidate, depth=depth + 1, via=kind))
+    return admitted, False

@@ -185,6 +185,39 @@ def test_max_depth_bound_reached_with_nothing_beyond_is_not_truncated() -> None:
     assert result.truncated is False
 
 
+def test_depth_bound_with_only_dangling_edges_beyond_is_not_truncated() -> None:
+    """A dangling id beyond the bound was never material, so nothing was cut.
+
+    Counting unvisited edge ids without resolving them would flag truncation
+    here and mislead a consumer into thinking visible material was withheld.
+    """
+    a = _rec("A", links=["B"])
+    b = _rec("B", links=["gone"])
+    result = discover([a], _fetcher(b), _accept_all, max_depth=1, max_nodes=20)
+    assert _ids(result) == ["B"]
+    assert result.truncated is False
+
+
+def test_depth_bound_with_only_unservable_records_beyond_is_not_truncated() -> None:
+    """An out-of-scope record beyond the bound must not set ``truncated``.
+
+    Otherwise the flag becomes a side channel: a public caller could infer that
+    a private record exists just past the boundary.
+    """
+    a = _rec("A", links=["B"])
+    b = _rec("B", links=["secret"])
+    secret = _rec("secret", scope=_PRIVATE)
+    result = discover(
+        [a],
+        _fetcher(b, secret),
+        lambda record: record.scope != _PRIVATE,
+        max_depth=1,
+        max_nodes=20,
+    )
+    assert _ids(result) == ["B"]
+    assert result.truncated is False
+
+
 def test_max_depth_zero_discovers_nothing() -> None:
     a = _rec("A", links=["B"])
     b = _rec("B")
