@@ -30,6 +30,15 @@ def _cli(
     )
 
 
+def _hits(proc: subprocess.CompletedProcess[str]) -> list[dict]:
+    """Return the items of a ``recall --json`` composite bundle.
+
+    ``recall --json`` emits ONE object — ``{query, mode, truncated, items}`` —
+    where each item is a full record plus its ``tier``/``depth`` labels.
+    """
+    return json.loads(proc.stdout)["items"]
+
+
 # ------------------------------------------------------------------
 # 1. Batch ingest then recall
 # ------------------------------------------------------------------
@@ -58,7 +67,7 @@ def test_batch_ingest_and_recall(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
     assert isinstance(hits, list)
     assert len(hits) >= 1
     for hit in hits:
@@ -92,7 +101,7 @@ def test_idempotent_reingest(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
     ids = [h["id"] for h in hits if h["id"] == "idempotent-1"]
     assert len(ids) == 1, "the id must appear exactly once after re-ingest"
 
@@ -169,7 +178,7 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
     #     provenance it verifies.) ---
     result = _cli(["recall", "standup notes", "--top-k", "10", "--json"], data_dir=data_dir)
     assert result.returncode == 0
-    discord_hits = json.loads(result.stdout)
+    discord_hits = _hits(result)
     discord_ids = {h["id"] for h in discord_hits}
     assert "discord-1" in discord_ids, "public recall must return the discord record"
     assert "claude-private-1" not in discord_ids, "public recall must NOT return the private record"
@@ -182,7 +191,7 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
 
     result = _cli(["recall", "transformer paper", "--top-k", "10", "--json"], data_dir=data_dir)
     assert result.returncode == 0
-    research_hits = json.loads(result.stdout)
+    research_hits = _hits(result)
     research_ids = {h["id"] for h in research_hits}
     assert "research-1" in research_ids, "public recall must return the research record"
     assert (
@@ -198,7 +207,7 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0
-    private_hits = json.loads(result.stdout)
+    private_hits = _hits(result)
     private_ids = {h["id"] for h in private_hits}
     assert "claude-private-1" in private_ids, "private scoped recall must return the private record"
 
@@ -216,7 +225,7 @@ def test_multi_consumer_roundtrip(tmp_path: Path) -> None:
 def _recall_ids(proc: subprocess.CompletedProcess[str]) -> list[str]:
     """Parse a ``recall --json`` result into the ordered list of hit ids."""
     assert proc.returncode == 0, proc.stderr
-    return [h["id"] for h in json.loads(proc.stdout)]
+    return [h["id"] for h in _hits(proc)]
 
 
 def test_migrated_record_recalls_with_provenance_and_signal(tmp_path: Path) -> None:
@@ -252,7 +261,7 @@ def test_migrated_record_recalls_with_provenance_and_signal(tmp_path: Path) -> N
         data_dir=data_dir,
     )
     assert result.returncode == 0, result.stderr
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
     assert hits, "migrated topic must be recallable in its scope"
     hit = hits[0]
     # Provenance round-trips verbatim.
@@ -326,7 +335,7 @@ def test_fresh_fact_outranks_year_old_equal_match(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert result.returncode == 0, result.stderr
-    hits = json.loads(result.stdout)
+    hits = _hits(result)
     by_id = {h["id"]: h for h in hits}
     assert {"fresh", "stale"} <= set(by_id), "both equally-matching records must be present"
     # The deterministic L2 guarantee: the fresh fact carries a stronger signal...
@@ -372,7 +381,7 @@ def test_supersede_then_sweep_shadows_old_but_recoverable(tmp_path: Path) -> Non
         ["recall", "moon", "--mode", "keyword", "--include-shadowed", "--json"],
         data_dir=data_dir,
     )
-    by_id = {h["id"]: h for h in json.loads(shadowed.stdout)}
+    by_id = {h["id"]: h for h in _hits(shadowed)}
     assert "moon-old" in by_id, "shadowed record must remain retrievable"
     assert by_id["moon-old"]["lifecycle"] == "shadowed"
 
@@ -408,7 +417,7 @@ def test_year_old_record_archived_but_recoverable(tmp_path: Path) -> None:
         ["recall", "dinosaurs", "--mode", "keyword", "--include-archived", "--json"],
         data_dir=data_dir,
     )
-    by_id = {h["id"]: h for h in json.loads(archived.stdout)}
+    by_id = {h["id"]: h for h in _hits(archived)}
     assert "ancient" in by_id, "archived record must remain retrievable"
     assert by_id["ancient"]["lifecycle"] == "archived"
     # The L2 signal is what L3 thresholds on: the archived fact's signal is weak.
@@ -424,7 +433,7 @@ def test_recall_exposes_freshness_signal_distinct_from_score(tmp_path: Path) -> 
 
     result = _cli(["recall", "freshness signal", "--mode", "keyword", "--json"], data_dir=data_dir)
     assert result.returncode == 0
-    hit = json.loads(result.stdout)[0]
+    hit = _hits(result)[0]
     assert isinstance(hit["score"], (int, float))
     assert isinstance(hit["signal"], (int, float))
     assert "signal" in hit and "score" in hit

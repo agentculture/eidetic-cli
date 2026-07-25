@@ -69,7 +69,7 @@ def _recall(
     visibility: str = "public",
     mode: str = "keyword",
 ) -> list[dict]:
-    """Call cmd_recall with --json and return the parsed hit list."""
+    """Call cmd_recall with --json and return the composite bundle's items."""
     ns = argparse.Namespace(
         query=query,
         backend="files",
@@ -80,6 +80,9 @@ def _recall(
         case_sensitive=False,
         top_k=5,
         filters=[],
+        source=None,
+        depth=1,
+        max_nodes=20,
         include_shadowed=False,
         include_archived=False,
         json=True,
@@ -95,7 +98,7 @@ def _recall(
     finally:
         sys.stdout = old_stdout
     assert rc == 0, f"cmd_recall returned {rc}"
-    return json.loads(buf.getvalue())
+    return json.loads(buf.getvalue())["items"]
 
 
 def _read_jsonl(path: Path) -> list[dict]:
