@@ -1,0 +1,361 @@
+{
+  "slug": "composite-recall-bundle-37",
+  "title": "composite recall bundle (#37)",
+  "frame_slug": "composite-recall-bundle-37",
+  "schema_version": 3,
+  "status": "exported",
+  "created": "2026-07-25T20:56:26Z",
+  "updated": "2026-07-25T21:04:11Z",
+  "targets": [
+    {
+      "id": "c2",
+      "kind": "requirement",
+      "text": "one composite fetch call returns the primary hits from the existing four recall modes plus a bounded neighborhood traversal over links/supersedes ids, assembled client-side in eidetic over the dual home+repo stores (data_refinery get is single-id, single-store: store/__init__.py:53-61) with full Record payloads per item"
+    },
+    {
+      "id": "h2",
+      "kind": "honesty",
+      "text": "traversal id-lookups span BOTH candidate stores (home + repo) exactly like search does - data_refinery get is single-store, so the bundle path must union stores itself; every bundle item is a full Record round-trip, not a projection"
+    },
+    {
+      "id": "c3",
+      "kind": "requirement",
+      "text": "every traversal hop re-applies can_serve before a discovered record enters the bundle - remember accepts arbitrary link/supersedes ids with zero scope validation (remember.py:83-149) and the only cross-scope guard today is sweep's shadow no-op (lifecycle.py:176-177), so an unchecked traversal is a brand-new leak path; mirror the double-check in backend.py:365-383"
+    },
+    {
+      "id": "h3",
+      "kind": "honesty",
+      "text": "a regression test plants a private record reachable via links from a public record and asserts it never appears in a public-visibility bundle at any depth; the can_serve check runs per hop, not only at entry"
+    },
+    {
+      "id": "c5",
+      "kind": "requirement",
+      "text": "traversal depth and size bounds are caller-stated flags with safe defaults - the embodiment spec frames bound-setting as the caller's responsibility, not hardcoded in eidetic"
+    },
+    {
+      "id": "h4",
+      "kind": "honesty",
+      "text": "depth and size bounds are argparse flags with documented defaults; hitting a bound truncates the traversal VISIBLY (the bundle reports truncation) - never silently"
+    },
+    {
+      "id": "c6",
+      "kind": "requirement",
+      "text": "every bundle item carries record id, full metadata, score where applicable, and a bundle-tier label (primary hit vs traversal-discovered) so the consumer can cite each item and record its enrichment level - provenance-mandatory precedent from issue #3, ledger requirement from the embodiment spec"
+    },
+    {
+      "id": "h5",
+      "kind": "honesty",
+      "text": "every item in the bundle JSON carries record id, full metadata, its tier label, and score where applicable - a consumer can attribute every item to its tier without heuristics"
+    },
+    {
+      "id": "c8",
+      "kind": "boundary",
+      "text": "no synthesis, summarization, or LLM call inside eidetic - the bundle is mechanically assembled raw material, matching the fetch-only posture issues #37 and #1 both state"
+    },
+    {
+      "id": "h10",
+      "kind": "honesty",
+      "text": "grep-level verifiable: the bundle path makes no LLM or chat call and generates no text - the only network call is the existing embeddings endpoint; every bundle text field is byte-equal to stored record text"
+    },
+    {
+      "id": "c9",
+      "kind": "boundary",
+      "text": "the bundle surface accepts no writes from the consumer - it is not a channel for embodiment to propose associations back into the store; the embodiment spec explicitly leaves muse write-back as a separate future question"
+    },
+    {
+      "id": "h11",
+      "kind": "honesty",
+      "text": "the bundle surface exposes no ingest parameter and persists nothing caller-supplied; the only writes on the path are eidetic's own graded reinforcement bumps"
+    },
+    {
+      "id": "c13",
+      "kind": "requirement",
+      "text": "recall's default output IS the composite bundle - the bundle was always the intended use; the bare-list shape is superseded, and existing consumers (jetson-ai-lab-cli #3 contract, the fanned-out /recall skill wrappers) migrate to the bundle shape with a consumer notice"
+    },
+    {
+      "id": "h6",
+      "kind": "honesty",
+      "text": "the default-shape change ships with migration notices to the #3 consumer and the wrapper fan-out, and every in-repo consumer of the old shape (tests, /recall skill wrapper, explain/learn docs) is updated in the same change"
+    },
+    {
+      "id": "c14",
+      "kind": "requirement",
+      "text": "recall gains a dedicated --source <x> flag for source-specific filtering of the bundle (alongside the existing generic --filter facets)"
+    },
+    {
+      "id": "h7",
+      "kind": "honesty",
+      "text": "--source constrains the bundle deterministically and its tier coverage (primary-only vs all tiers) is explicitly documented and tested"
+    },
+    {
+      "id": "c15",
+      "kind": "requirement",
+      "text": "graded reinforcement: primary hits reinforce fully as today; traversal-discovered records reinforce by a fraction that decays with hop distance from the recalled original node"
+    },
+    {
+      "id": "h8",
+      "kind": "honesty",
+      "text": "a persistence test asserts the exact graded bumps: the full bump for a primary hit, decay**depth for a traversal discovery, and no bump at all for records excluded by scope or lifecycle filters"
+    },
+    {
+      "id": "c19",
+      "kind": "audience",
+      "text": "embodiment's muse memory-compiler (first consumer of the bundle) plus every existing recall caller - jetson-ai-lab-cli (#3), the fanned-out /recall skill wrappers, and the research-flow agents (#1) - all of whom migrate to the bundle-shaped default"
+    },
+    {
+      "id": "h12",
+      "kind": "honesty",
+      "text": "the migration notice demonstrably reaches each named consumer (issue #3 thread, the wrapper fan-out repos, eidetic#37 thread for embodiment) before or with the release"
+    },
+    {
+      "id": "c20",
+      "kind": "after_state",
+      "text": "a single default recall returns a composite bundle: primary hits, their verbatim text identified by record id, a bounded links/supersedes neighborhood traversal, and the text of traversed neighbors - every item tier-labeled and cited by record id, with graded reinforcement persisted; a downstream mind compiles memory from raw fetched material without reaching into the store"
+    },
+    {
+      "id": "h13",
+      "kind": "honesty",
+      "text": "demonstrated by the e2e linked-graph run: one default recall --json call yields all four tiers with record ids and tier labels present on every item"
+    },
+    {
+      "id": "c21",
+      "kind": "before_state",
+      "text": "recall is flat top-k search; a consumer wanting the hit, its neighborhood, and what backs them must issue N follow-up recalls and still cannot reach the traversal (issue #37); the graph edges exist in the data model but nothing walks them"
+    },
+    {
+      "id": "h14",
+      "kind": "honesty",
+      "text": "verified against current source: recall.py emits flat ranked hits only and no verb traverses links/supersedes - matching issue #37's what-exists-today section and scope entries s2/s3"
+    },
+    {
+      "id": "c22",
+      "kind": "why_it_matters",
+      "text": "the division of labour is the point: memory construction is association work and belongs to a mind (the muse compiles); memory retrieval is the store's job and stays mechanical - the bundle keeps eidetic fetch-only while making the raw material rich enough to compile from"
+    },
+    {
+      "id": "h15",
+      "kind": "honesty",
+      "text": "the seam holds in code review: no compile/synthesize logic lands in eidetic; embodiment's compiler consumes the bundle over the subprocess boundary only"
+    },
+    {
+      "id": "c23",
+      "kind": "success_signal",
+      "text": "a live run shows one default recall --json emitting a tier-labeled, id-cited bundle; a planted private record reachable via links from a public hit never appears in a public bundle; persisted recall_count shows the full bump for primary hits and decayed fractional bumps for traversal discoveries"
+    },
+    {
+      "id": "h16",
+      "kind": "honesty",
+      "text": "each signal is a concrete automated check: the bundle-shape assertion, the planted-leak regression test, and the graded-bump persistence test all green in CI"
+    },
+    {
+      "id": "c24",
+      "kind": "announcement",
+      "text": "eidetic recall now returns a composite bundle by default: matching records, their verbatim text identified by record id, a bounded links/supersedes neighborhood traversal, and the text of traversed neighbors - every item tier-labeled and cited by record id, filtered per hop by can_serve, with graded reinforcement (full bump for primary hits, decaying by hop distance for traversal discoveries)"
+    },
+    {
+      "id": "h9",
+      "kind": "honesty",
+      "text": "an end-to-end live-store run seeds a small linked record graph across public+private scopes, runs default recall, and verifies all four bundle properties: tier labels + record ids on every item, zero private leakage through traversal, caller bounds honored, graded reinforcement persisted"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "summary": "Traversal engine: pure bounded BFS over links/supersedes (new eidetic/memory/traverse.py + tests/test_traverse.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "BFS walks links+supersedes ids from seed records with caller-stated depth and max-node bounds; hitting a bound sets a truncated flag on the result - never a silent cut",
+        "an injected can_serve predicate runs on EVERY hop: a private record reachable via links from a public seed never enters the result at any depth (regression test with a planted private record)",
+        "pure module: no I/O, no clock, no store import; deterministic discovery order; each discovered node carries (record id, hop depth, via-edge kind)"
+      ],
+      "deps": [],
+      "covers": [
+        "c3",
+        "c5",
+        "h3",
+        "h4"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t2",
+      "summary": "Dual-store id-lookup: StoreBackend.get_many spanning home+repo stores (eidetic/memory/backend.py + tests/test_backend.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "get_many(ids, scope) unions BOTH candidate store dirs exactly like search does (data_refinery get is single-store); returns full Record round-trips, never projections",
+        "can_serve applies per store dir BEFORE dedup so a non-serveable duplicate can never shadow a serveable one (mirrors test_backend_multi_store pattern); home dir wins on id collision",
+        "unknown ids are skipped silently (dangling links tolerated); mongo/neo4j path degrades to per-id get without error"
+      ],
+      "deps": [],
+      "covers": [
+        "c2",
+        "h2"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t3",
+      "summary": "Float-tolerant recall_count groundwork (eidetic/memory/record.py + scoring.py + tests/test_record.py, test_signal_strength.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "recall_count accepts and round-trips float values through Record.to_dict/from_dict and the envelope mapping; legacy integer records load unchanged",
+        "signal_strength access_bonus math produces identical results for integer counts as before (no ranking regression); fractional counts scale continuously",
+        "no other schema field changes; test_record + test_signal_strength extended, all existing tests green"
+      ],
+      "deps": [],
+      "covers": [
+        "c15"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t4",
+      "summary": "Bundle assembly: recall default becomes the composite bundle + --source/--depth/--max-nodes flags (eidetic/cli/_commands/recall.py + tests/test_recall.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "default recall --json emits ONE bundle object: {query, mode, truncated, items: [record fields + tier ('primary'|'traversal') + depth]}; the old bare-list shape is gone and test_recall shape assertions are updated in the same change",
+        "--source <x> filters on metadata.source across BOTH tiers (mixed-source store test proves it); coexists with --filter; --depth (default 1) and --max-nodes (default 20) are documented argparse flags and truncation is reported in the payload",
+        "every item carries record id, full metadata, tier label, and score where applicable - tier attributable without heuristics; bundle text fields are byte-equal to stored record text",
+        "no LLM or chat call anywhere on the path (only the existing embeddings endpoint); no new ingest parameter; text mode renders tiers readably",
+        "traversal seeds are the primary hits; discovery via t1 engine + t2 get_many; per-hop can_serve verified at CLI level with a planted private record"
+      ],
+      "deps": [
+        "t1",
+        "t2"
+      ],
+      "covers": [
+        "c2",
+        "c5",
+        "c6",
+        "h5",
+        "c13",
+        "c14",
+        "h7",
+        "c8",
+        "h10",
+        "c9",
+        "h11",
+        "h4"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t5",
+      "summary": "Graded reinforcement wiring: full bump for primary, decay**depth for traversal (recall.py reinforcement loop + tests/test_recall.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "primary hits bump recall_count by 1.0; a depth-d traversal discovery bumps by DECAY**d (DECAY=0.5 module constant next to the scoring constants); last_recall stamped on every bumped record",
+        "no bump at all for records excluded by scope or lifecycle filters; score/signal still cleared before persisting",
+        "a persistence test asserts the EXACT stored values after a bundle recall: 1.0-stepped counts for primary, fractional for traversal"
+      ],
+      "deps": [
+        "t3",
+        "t4"
+      ],
+      "covers": [
+        "c15",
+        "h8",
+        "c24"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t6",
+      "summary": "Docs surface: explain catalog, learn, overview, CLAUDE.md, CHANGELOG + version bump",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "explain catalog _RECALL documents the bundle shape, tiers, new flags, graded reinforcement, and the before-state contrast (flat hits, N follow-up recalls) plus the DR#20 upstream linkage and v1 degrade (client-side BFS, vector lines = verbatim record text)",
+        "learn _TEXT and _as_json_payload plus overview _VERBS updated in the same change (the hand-maintained trio drifts silently otherwise); CLAUDE.md memory-surface section updated",
+        "version bumped (minor) with a Keep-a-Changelog entry naming the breaking default-shape change; teken cli doctor --strict stays green; no compile/synthesize logic anywhere in the diff (reviewable seam)"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c21",
+        "h14",
+        "c22",
+        "h15"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t7",
+      "summary": "E2E + CI success signals: two-scope linked-graph live run + leak regression + bump assertions (new tests/test_bundle_e2e.py)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "e2e test seeds a small linked record graph across public+private scopes in temp stores, runs ONE default recall --json, and asserts all four bundle properties: tier labels + ids on every item, zero private leakage, bounds honored with visible truncation, graded bumps persisted",
+        "the planted-leak regression and exact-bump assertions run in normal pytest (CI) - every success signal is an automated check, no manual verification step",
+        "e2e uses EIDETIC_DATA_DIR temp isolation and never touches the real repo or home store"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c20",
+        "h13",
+        "c23",
+        "h16",
+        "c24",
+        "h9",
+        "c3",
+        "h3"
+      ],
+      "instruction": ""
+    },
+    {
+      "id": "t8",
+      "summary": "Migration notices to every named consumer (via communicate; no code)",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "notices with the new bundle schema + a worked example payload posted to: the #3 consumer thread (jetson-ai-lab-cli), the wrapper fan-out repos (rollout recipe or a tracked umbrella issue), and eidetic#37 (tells embodiment the composite fetch is live + its enrichment-level mapping)",
+        "each notice states the breaking change (bare list -> bundle object), the migration (read items[] instead of the top-level list), and lands before or with the release",
+        "eidetic's own /recall+/remember skill wrappers and docs/contract.md are checked for old-shape parsing and updated if affected (in-repo consumers migrate in the same release)"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c19",
+        "h12",
+        "h6",
+        "c13"
+      ],
+      "instruction": ""
+    }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "text": "the reinforcing default bundle amplifies the #24/#32 committed-store dirtying; the write-location fix (sidecar store or reinforcement gate) lands in those issues and the bundle adopts it - explicitly not solved in this plan",
+      "kind": "follow_up",
+      "task_id": null,
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r2",
+      "text": "DR#20 enrichment adoption: when data-refinery ships real neo4j edges + a bounded traversal endpoint + persisted vector lines, swap the client-side BFS for the DR endpoint and upgrade the vector-lines tier from verbatim-record-text to true index lines",
+      "kind": "follow_up",
+      "task_id": null,
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r3",
+      "text": "issue #16 stays open: a re-ingest by id still resets recall_count/last_recall, zeroing fractional counts too; t3 keeps floats round-tripping but the merge-forward fix is #16's own scope",
+      "kind": "unknown_nonblocking",
+      "task_id": null,
+      "resolved": false,
+      "resolution": ""
+    }
+  ]
+}
