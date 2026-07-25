@@ -41,7 +41,7 @@ def _rec(
     *,
     created: str = DATE_UNKNOWN,
     last_recall: str | None = None,
-    recall_count: int = 0,
+    recall_count: int | float = 0,
     links: list[str] | None = None,
 ) -> Record:
     return Record(
@@ -124,6 +124,53 @@ def test_more_recalls_raise_signal() -> None:
     low = _rec("lo", "x", created=NOW, recall_count=0, last_recall=NOW)
     high = _rec("hi", "x", created=NOW, recall_count=5, last_recall=NOW)
     assert signal_strength(high, NOW) > signal_strength(low, NOW)
+
+
+def test_access_bonus_pinned_int_cases_no_regression() -> None:
+    """t3: pin known-good access_bonus outputs computed from the CURRENT implementation.
+
+    recall_count * 0.05 capped at 0.5, with created == last_recall == NOW (age_factor
+    == 1.0, staleness == 0.0) isolates the access_bonus term inside signal_strength so
+    these literals catch any future access_bonus regression. Values were computed by
+    running the pre-t3 implementation directly -- see the eidetic-t3 t3 task report.
+    """
+    cases = {
+        0: 0.5,
+        1: 0.55,
+        3: 0.65,
+        5: 0.75,
+        10: 1.0,
+        15: 1.0,
+        20: 1.0,
+    }
+    for recall_count, expected in cases.items():
+        rec = _rec("pin", "x", created=NOW, last_recall=NOW, recall_count=recall_count)
+        assert signal_strength(rec, NOW) == pytest.approx(expected), recall_count
+
+
+def test_access_bonus_scales_continuously_for_fractional_counts() -> None:
+    """t3: a fractional recall_count (graded/hop-decayed reinforcement) scales
+    continuously -- the same access_bonus formula applied to a float, not a
+    special-cased path."""
+    half = _rec("half", "x", created=NOW, last_recall=NOW, recall_count=0.5)
+    two_half = _rec("two-half", "x", created=NOW, last_recall=NOW, recall_count=2.5)
+    assert signal_strength(half, NOW) == pytest.approx(0.525)
+    assert signal_strength(two_half, NOW) == pytest.approx(0.625)
+    # Strictly between the neighbouring pinned integer cases (0 -> 0.5, 1 -> 0.55;
+    # 2 -> 0.6, 3 -> 0.65), proving continuous scaling rather than a step function.
+    assert (
+        signal_strength(_rec("zero", "x", created=NOW, last_recall=NOW, recall_count=0), NOW)
+        < signal_strength(half, NOW)
+        < signal_strength(_rec("one", "x", created=NOW, last_recall=NOW, recall_count=1), NOW)
+    )
+
+
+def test_access_bonus_identical_for_int_and_equal_float() -> None:
+    """t3: recall_count=3 (int) and recall_count=3.0 (float) must yield the exact
+    same signal -- no ranking regression when a record's count becomes float-typed."""
+    as_int = _rec("as-int", "x", created=NOW, last_recall=NOW, recall_count=3)
+    as_float = _rec("as-float", "x", created=NOW, last_recall=NOW, recall_count=3.0)
+    assert signal_strength(as_int, NOW) == signal_strength(as_float, NOW)
 
 
 def test_recent_recall_beats_stale_recall() -> None:

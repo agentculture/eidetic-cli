@@ -61,6 +61,19 @@ class TestRoundTrip:
         r = _minimal_record(recall_count=7)
         assert Record.from_dict(r.to_dict()).recall_count == 7
 
+    def test_recall_count_roundtrips_float(self) -> None:
+        """t3: a fractional recall_count (hop-decayed traversal bump) round-trips exactly."""
+        r = _minimal_record(recall_count=1.5)
+        restored = Record.from_dict(r.to_dict())
+        assert restored.recall_count == 1.5
+        assert isinstance(restored.recall_count, float)
+
+    def test_recall_count_roundtrips_int_type_preserved(self) -> None:
+        """t3: an int-valued recall_count is never coerced to float on round-trip."""
+        r = _minimal_record(recall_count=7)
+        restored = Record.from_dict(r.to_dict())
+        assert isinstance(restored.recall_count, int)
+
     def test_links_roundtrips_empty(self) -> None:
         r = _minimal_record(links=[])
         assert Record.from_dict(r.to_dict()).links == []
@@ -151,6 +164,12 @@ class TestLegacyBackCompat:
     def test_recall_count_defaults_to_zero(self) -> None:
         r = Record.from_dict(self._legacy_dict())
         assert r.recall_count == 0
+
+    def test_recall_count_defaults_to_int_zero_not_float(self) -> None:
+        """t3: a legacy dict lacking 'recall_count' loads int 0, never float 0.0 --
+        this keeps re-serialised JSON byte-identical for untouched legacy records."""
+        r = Record.from_dict(self._legacy_dict())
+        assert isinstance(r.recall_count, int)
 
     def test_links_defaults_to_empty_list(self) -> None:
         r = Record.from_dict(self._legacy_dict())
