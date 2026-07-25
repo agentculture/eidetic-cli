@@ -181,9 +181,42 @@ compute the contributor list for each scope (union of `added_by` and
 _RECALL = """\
 # eidetic-cli recall
 
-Search the memory store and return matching records. Returns top-k hits, each
-with text, full metadata, and a relevance score. Scope-aware: queries respect
-the configured scope and visibility, with no private-to-public leak.
+Search the memory store and return a composite bundle: the search hits
+themselves, plus a bounded neighbourhood walk of `links`/`supersedes` out from
+those hits. **`recall`'s default output is the bundle object, not a bare
+list** — this is a breaking shape change from pre-0.13.0 recall, which emitted
+a flat JSON list of hits.
+
+## Bundle shape (`--json`)
+
+    {
+      "query": "<the query string>",
+      "mode": "hybrid",
+      "truncated": false,
+      "items": [
+        {"...every record field (id, text, metadata, score, signal, ...)...",
+         "tier": "primary", "depth": 0},
+        {"...": "...", "tier": "traversal", "depth": 1}
+      ]
+    }
+
+Every item is the **full record shape** — id, verbatim `text`, complete
+`metadata`, `score`, `signal` — plus two bundle-only fields:
+
+- `tier` — `primary` for a search hit (`depth` always `0`), or `traversal` for
+  a record discovered by walking `links`/`supersedes` outward from the primary
+  hits (`depth` = hop distance, `1` for a direct neighbour, `2` for a
+  neighbour's neighbour, ...). A consumer attributes every item to its tier
+  without heuristics.
+- `depth` — hop distance from the nearest primary hit; `0` for every primary
+  item.
+
+`--depth 0` skips the traversal walk entirely and reproduces the old flat,
+primary-only shape (still wrapped in the bundle envelope — `items` then holds
+only `tier: "primary"` entries).
+
+Text mode (no `--json`) renders each item under a `[<tier> depth=<n>] id: ...`
+header, keeping the two tiers visually distinguishable.
 
 ## Search modes (`--mode`, default `hybrid`)
 
@@ -197,6 +230,9 @@ the configured scope and visibility, with no private-to-public leak.
   server is unreachable, `alpha` collapses to 0 (keyword-only) so hybrid never
   fuses meaningless offline-fallback cosine.
 
+Search modes select the **primary** tier only. The traversal tier is not
+ranked by any of these — it is a graph walk, not a search.
+
 ## Flags
 
 - `--mode` — search mode: `exact`, `approximate`, `keyword`, `hybrid` (default:
@@ -204,26 +240,100 @@ the configured scope and visibility, with no private-to-public leak.
 - `--alpha` — hybrid blend weight in `[0,1]` (default: `0.5`); only used by
   `--mode hybrid`.
 - `--case-sensitive` — only used by `--mode exact`; require matching case.
-- `--top-k` — maximum number of results to return (default: 5).
-- `--filter KEY=VALUE` — metadata facet filter; repeatable.
+- `--top-k` — maximum number of primary (search-hit) results to return
+  (default: `5`). Bounds the primary tier only; the traversal tier is bounded
+  separately by `--depth`/`--max-nodes`.
+- `--filter KEY=VALUE` — metadata facet filter on the primary search only;
+  repeatable.
+- `--source SOURCE` — metadata.source facet that constrains **both** tiers
+  (unlike `--filter`, which reaches the primary search alone): a traversal
+  discovery whose `metadata.source` doesn't match `--source` is a dead end and
+  is not walked past either. Conflicts with a different `--filter source=...`
+  value raise a user error rather than silently picking one.
+- `--depth N` — traversal hop bound from the primary hits (default: `1`). `0`
+  disables the walk (flat, primary-only bundle); `truncated` is *not* set by
+  `--depth 0` since opting out is not a cut of a requested walk.
+- `--max-nodes N` — maximum number of traversal-*discovered* records (default:
+  `20`); primary hits never count against this budget.
 - `--backend` — storage backend to query: `files`, `mongo`, `neo4j`, or `graph`
   (`graph` is an alias for `neo4j`; default: `files`).
 - `--scope` — query scope name (default: `default`).
 - `--visibility` — query scope visibility: `public` or `private` (default:
   `public`).
-- `--json` — emit results as a JSON list to stdout.
+- `--include-shadowed` / `--include-archived` — include lifecycle-excluded
+  records (both tiers; excluded by default).
+- `--json` — emit the bundle object as JSON to stdout.
+
+## Truncation
+
+Hitting `--depth` or `--max-nodes` before the walk has exhausted everything
+genuinely reachable sets `"truncated": true` on the bundle — the walk never
+cuts silently. `truncated` is `false` whenever the walk ran to completion
+(including the `--depth 0` opt-out case).
+
+## Per-hop no-leak guarantee
+
+Every traversal hop re-applies the same admission policy the primary tier
+enforces — scope visibility (`can_serve`), lifecycle filtering, and the
+`--source` facet — to each *discovered* record, not only to the seeds. A
+private record reachable via `links` from a public hit never enters a public
+bundle at any depth, and a rejected record is a dead end: its own
+`links`/`supersedes` are never walked further, so a filtered-out neighbour
+cannot smuggle a deeper record through as a transit hop.
+
+## Graded reinforcement
+
+Every `recall` call still passively reinforces the records it returns
+(`last_recall` + `recall_count`), but the bump is now **graded by tier**:
+
+- A primary hit bumps `recall_count` by the full `1.0` (unchanged from
+  pre-bundle recall).
+- A traversal discovery at hop depth `d` bumps `recall_count` by
+  `DECAY**d` (`DECAY = 0.5` in `eidetic/memory/scoring.py`, alongside the
+  freshness-signal constants) — `0.5` at depth 1, `0.25` at depth 2, and so
+  on. `recall_count` is `int | float`; a record's count keeps accumulating
+  fractional bumps once any traversal has touched it.
+- A record excluded by scope or lifecycle filtering is never a bundle item
+  and is never bumped.
+
+`last_recall` is stamped on every bumped record, primary or traversal. The
+bumps are written from the *emitted* payload's pre-bump snapshot — the JSON
+you see in this call always reflects state *before* this call's own bump.
 
 ## Exit codes
 
 - `0` success
-- `1` user-input error (malformed filter, missing query, bad `--mode`/`--alpha`)
+- `1` user-input error (malformed filter, missing query, bad `--mode`/`--alpha`,
+  negative `--depth`/`--max-nodes`, conflicting `--source`/`--filter source=`)
 
-## Behavior
+## Before / after (issue #37)
 
-Returns up to `--top-k` hits sorted by relevance score. Each hit includes the
-record text, all metadata fields, and a numeric score. Scope is enforced at
-query time across every mode: a query with `--visibility public` never returns
-records marked private, preventing accidental private-to-public leaks.
+Before: recall was flat top-k search; a consumer wanting a hit's neighbourhood
+had to issue N follow-up recalls and still could not reach the graph the
+record's own `links`/`supersedes` fields describe. After: one default recall
+call returns the hit plus a bounded, tier-labelled, cited neighbourhood in the
+same payload.
+
+## v1 degradations (honest, not hidden)
+
+Two aspects of this feature are client-side simulations of what a real store
+feature would look like, not the real thing — both are filed upstream as
+[data-refinery-cli#20](https://github.com/agentculture/data-refinery-cli/issues/20):
+
+- **"vector lines" is not a real persisted vector index.** Each bundle item's
+  `text` is simply the record's own stored text, cited by id — there is no
+  sub-record chunking or persisted embedding-index line anywhere in the stack.
+- **The traversal is a client-side BFS**, not a graph-store traversal.
+  data-refinery's neo4j backend stores `links`/`supersedes` as opaque JSON on
+  a node's own properties, with no relationships and no traversal API —
+  eidetic walks the fields itself, resolving each hop's ids through
+  `StoreBackend.get_many` (`eidetic/memory/backend.py`), one id-lookup batch
+  at a time.
+
+`recall` remains fetch-only in every case above: no synthesis, no
+summarisation, no LLM/chat call anywhere on this path — the only network call
+is the existing embeddings endpoint the search modes already use. Bundle text
+fields are byte-equal to stored record text.
 """
 
 

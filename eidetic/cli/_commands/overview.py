@@ -60,7 +60,9 @@ _VERBS = [
     "overview — this descriptive snapshot",
     "doctor — check the agent-identity invariants",
     "remember — ingest memory records (JSON or NDJSON)",
-    "recall — search the memory store",
+    "recall — search the memory store; returns a composite bundle (primary "
+    "hits + a bounded links/supersedes traversal), tier-labelled and "
+    "graded-reinforced, not a bare list (--depth/--max-nodes/--source)",
     "sweep — apply lifecycle transitions (shadow/archive) across the store",
     "migrate qq — import legacy QQ memory (files/mongo/neo4j)",
     "migrate store — upgrade store format (Record -> Envelope JSONL)",

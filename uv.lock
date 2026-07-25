@@ -180,7 +180,7 @@ wheels = [
 
 [[package]]
 name = "eidetic-cli"
-version = "0.12.1"
+version = "0.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "data-refinery-cli", extra = ["store"] },

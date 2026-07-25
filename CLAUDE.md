@@ -83,7 +83,7 @@ names match what the backends persist and what `recall --json` emits:
 | `supersedes` | optional | id of an earlier same-scope record this one replaces; `sweep` auto-shadows the target |
 | `links` | optional | list of related-memory ids; reserved for corroboration scoring |
 | `last_recall` | system | ISO-8601; bumped by each `recall` hit (passive reinforcement) |
-| `recall_count` | system | integer; bumped by each `recall` hit |
+| `recall_count` | system | `int \| float`; bumped by each `recall` hit — full `1.0` for a primary hit, `DECAY**depth` (graded, decaying by hop distance) for a traversal-discovered record, so the field can hold a fractional value |
 | `lifecycle` | system | `active` (default), `shadowed`, or `archived`; set by `sweep` |
 | `score` | recall-only | relevance, set by `recall`, never sent on ingest |
 | `signal` | recall-only | freshness strength in [0, 1]; computed at recall time, blends into ranking |
@@ -116,18 +116,56 @@ JSON and persisted as-is.
 
 ### Retrieval — `eidetic recall "<query>"`
 
-Input: a query string plus optional facet filters. Output: top-k records ranked
-by relevance, each returned with its `text` + **full `metadata`** + `score` +
-`signal` — **provenance is mandatory** (recall without metadata is unusable; the
-consumer in issue #3 builds *cited* answers). Freshness signal blends multiplicatively into
+`recall`'s default output is a **composite bundle**, not a flat hit list (#37):
+one call returns the search hits (the "primary" tier) plus a bounded
+`links`/`supersedes` neighborhood walk out from those hits (the "traversal"
+tier), assembled client-side from both candidate stores. `--json` emits:
+
+```json
+{"query": "...", "mode": "...", "truncated": false,
+ "items": [{"...full record fields...": "...", "tier": "primary", "depth": 0}]}
+```
+
+Every item — primary or traversal — carries the **full record shape**
+(`id`, `text`, complete `metadata`, `score`, `signal`) plus `tier`
+(`primary` for a search hit, `traversal` for a record the walk discovered)
+and `depth` (hop distance from the nearest primary hit; always `0` for
+`primary`) — **provenance is mandatory** on every item (recall without
+metadata is unusable; the consumer in issue #3 builds *cited* answers).
+`--depth` (default `1`) bounds hop distance and `--max-nodes` (default `20`)
+bounds discovered-node count; `--depth 0` skips the walk entirely and yields
+a flat, primary-only bundle. Either bound cutting the walk short sets
+`truncated: true` in the payload — never a silent cut. The public/private
+no-leak invariant is enforced at **every hop**, not only at the seed: a
+private record reachable via `links` from a public hit never enters a
+public bundle at any depth. `--source <x>` is a dedicated facet on
+`metadata.source` that constrains both tiers, alongside the generic
+`--filter KEY=VALUE` (primary tier only).
+
+Freshness signal blends multiplicatively into
 ranking for records that carry real temporal data; undated/legacy records are not
 affected. Lifecycle filtering: `shadowed` and `archived` records are **excluded by
 default** — pass `--include-shadowed` / `--include-archived` to retrieve them.
 Each `recall` hit passively bumps `last_recall` and `recall_count` on the matched
-records (reinforcement).
+records — **graded reinforcement**: a primary hit bumps the full `1.0`; a
+traversal discovery at hop depth `d` bumps `DECAY**d` (`DECAY = 0.5`, next to
+the other tunables in `eidetic/memory/scoring.py`), so `recall_count` is
+`int | float`. A record excluded by scope or lifecycle filtering is never
+bumped.
 
 Facet filters span both consumers: `source`, `channel`, time window (#3) and
 `paper`, `topic`, `claim`, `lemma`, `method`, `author`, downstream `task` (#1).
+
+**v1 degradations, filed upstream as
+[data-refinery-cli#20](https://github.com/agentculture/data-refinery-cli/issues/20):**
+the traversal is a **client-side BFS** over each record's own `links`/
+`supersedes` fields, not a graph-store traversal — data-refinery's neo4j
+backend stores links as opaque JSON on a node's own properties, with no
+relationships and no traversal API. The "vector lines" tier is likewise not a
+real persisted vector index: each item's `text` is simply the record's own
+stored text, cited by id — no sub-record chunking exists anywhere in the
+stack. `recall` remains fetch-only throughout: no synthesis, no LLM call
+anywhere on this path.
 
 ### Freshness signal
 
@@ -261,7 +299,20 @@ machine-readable, designed to be driven by another agent, not just a human.
   `backends/mongo.py`, `backends/neo4j.py`) are replaced by this adapter. eidetic
   retains all memory semantics: record schema, ranking modes, scoring, signal, and
   lifecycle. `data_refinery.quality` handles validate/dedup/integrity/freshness at
-  the boundary.
+  the boundary. `StoreBackend.get_many(ids, scope)` spans both candidate store
+  dirs for id-driven lookup (`data_refinery`'s own `get` is single-id,
+  single-store) — `can_serve` is applied per store dir *before* dedup so a
+  non-serveable duplicate can never shadow a serveable one; it backs `recall`'s
+  traversal-tier id resolution.
+
+- **`eidetic/memory/traverse.py`** — the pure bounded-BFS engine `recall`'s
+  composite bundle walks with: no I/O, no clock, no store import, given only a
+  set of seed records plus caller-injected `fetch` (typically `get_many`) and
+  `can_serve` callables. Walks each record's `links`/`supersedes` fields
+  breadth-first with caller-stated `max_depth`/`max_nodes` bounds; `can_serve`
+  re-runs on every hop (not only at the seed) so a rejected record is a dead
+  end and is never walked past; either bound cutting the walk short sets
+  `truncated` — never a silent cut.
 
 - **`eidetic/explain/catalog.py`** — `explain <path>` resolves command-path
   tuples to verbatim markdown docs. Adding a verb means adding its catalog entry

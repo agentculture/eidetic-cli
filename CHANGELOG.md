@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-07-26
+
+### Added
+
+- `recall` gains `--source <x>` (a dedicated `metadata.source` facet constraining both bundle tiers), `--depth N` (default `1`, traversal hop bound; `0` disables the walk for a flat, primary-only bundle), and `--max-nodes N` (default `20`, discovered-node bound). Either bound cutting the walk short sets `"truncated": true` in the payload — never a silent cut.
+- `eidetic/memory/traverse.py` — a pure, dependency-free bounded-BFS engine that walks each record's `links`/`supersedes` fields breadth-first from a set of seed records, re-applying the caller's `can_serve` predicate on *every* hop (not only at the seed) so a private record reachable via `links` from a public hit never enters a public bundle at any depth.
+- `StoreBackend.get_many(ids, scope)` (`eidetic/memory/backend.py`) — dual-store id lookup spanning both candidate store dirs (home + repo), backing the traversal tier's id resolution; `data_refinery`'s own `get` is single-id and single-store.
+- `DECAY` module constant (`eidetic/memory/scoring.py`, `= 0.5`) — the per-hop reinforcement decay applied to traversal-discovered records.
+
+### Changed
+
+- **BREAKING:** `recall --json`'s default output is now a composite bundle object, not a bare list of hits. Pre-0.13.0 callers parsing the top-level JSON as a list of records must update to read `.items` instead — each item in `items` carries every record field (`id`, `text`, full `metadata`, `score`, `signal`) plus a `tier` (`"primary"` for a search hit, `"traversal"` for a record discovered by walking `links`/`supersedes` outward from the primary hits) and a `depth` (hop distance from the nearest primary hit; always `0` for `primary`). Pass `--depth 0` to reproduce the old flat, primary-only behavior (still wrapped in the bundle envelope — read `.items`).
+- Passive reinforcement is now graded by tier instead of a flat bump for every returned record: a primary hit still bumps `recall_count` by the full `1.0`, but a traversal-discovered record bumps by `DECAY**depth` (`0.5` at depth 1, `0.25` at depth 2, ...). `recall_count` is now `int | float` to hold these fractional bumps; legacy integer counts round-trip unchanged.
+- Text-mode (non-`--json`) `recall` output now renders each item under a `[<tier> depth=<n>] id: ...` header so the two tiers stay visually distinguishable.
+- Updated the hand-maintained docs trio (`eidetic/explain/catalog.py`'s `_RECALL`, `eidetic/cli/_commands/learn.py`'s `_TEXT`/`_as_json_payload`, `eidetic/cli/_commands/overview.py`'s `_VERBS`) and `CLAUDE.md`'s memory-surface section to describe the bundle shape, the new flags, graded reinforcement, and the v1 degradations.
+
 ## [0.12.1] - 2026-07-20
 
 ### Added
