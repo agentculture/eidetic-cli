@@ -139,6 +139,13 @@ def signal_strength(record: Record, now: str | datetime) -> float:
     term is decay-neutral (``age_factor == 1.0``); when ``last_recall`` carries
     no date the staleness term is 0. Undated/legacy records are therefore not
     penalised.
+
+    ``record.recall_count`` may be an ``int`` (today's whole-count recall hits)
+    or a ``float`` (t3 groundwork for graded reinforcement: a later scheme bumps
+    by a fractional amount for records discovered via graph traversal). The
+    ``access_bonus`` formula below is unchanged either way — multiplication and
+    ``min()`` work identically over both types, so integer counts produce the
+    exact same signal as before and fractional counts scale continuously.
     """
     now_dt = _parse_dt(now) if isinstance(now, str) else now.astimezone(timezone.utc)
     if now_dt is None:
