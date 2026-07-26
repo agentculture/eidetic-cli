@@ -83,6 +83,23 @@ SIGNAL_BLEND_BETA: float = 0.25
 # a record sitting exactly at neutral neither lifts nor lowers its score.
 _NEUTRAL_SIGNAL: float = 0.5
 
+# -- reinforcement decay (graded recall bumps) -----------------------------
+#
+# A primary (direct search-hit) recall reinforces a record fully; a record
+# reached only via the links/supersedes graph traversal
+# (:mod:`eidetic.memory.traverse`) reinforces less, and less again the
+# further the hop — a background neighbourhood fetch should not age a record
+# as aggressively as a deliberate foreground hit, while a record that keeps
+# turning up adjacent to relevant matches is still recognised as genuinely
+# used.
+
+# Per-hop reinforcement decay applied to a traversal-discovered record: a
+# record found at hop depth d bumps ``recall_count`` by ``DECAY**d`` (depth 1
+# -> 0.5, depth 2 -> 0.25, depth 3 -> 0.125, ...). A primary hit (depth 0) is
+# exempt from this decay — it always bumps by the full 1.0; see
+# :mod:`eidetic.cli._commands.recall` for where both amounts are applied.
+DECAY: float = 0.5
+
 
 def _parse_dt(value: str | None) -> datetime | None:
     """Parse an ISO-8601 date/datetime string into an aware UTC datetime.
@@ -139,6 +156,13 @@ def signal_strength(record: Record, now: str | datetime) -> float:
     term is decay-neutral (``age_factor == 1.0``); when ``last_recall`` carries
     no date the staleness term is 0. Undated/legacy records are therefore not
     penalised.
+
+    ``record.recall_count`` may be an ``int`` (today's whole-count recall hits)
+    or a ``float`` (t3 groundwork for graded reinforcement: a later scheme bumps
+    by a fractional amount for records discovered via graph traversal). The
+    ``access_bonus`` formula below is unchanged either way — multiplication and
+    ``min()`` work identically over both types, so integer counts produce the
+    exact same signal as before and fractional counts scale continuously.
     """
     now_dt = _parse_dt(now) if isinstance(now, str) else now.astimezone(timezone.utc)
     if now_dt is None:

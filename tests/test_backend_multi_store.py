@@ -587,3 +587,245 @@ def test_git_toplevel_getcwd_raises_returns_none(monkeypatch) -> None:
 
     result = _git_toplevel()
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_many: dual-store id lookup (t2)
+# ---------------------------------------------------------------------------
+
+
+def test_get_many_unions_across_stores(tmp_path) -> None:
+    """get_many finds records from both the repo (public) and home (private) stores."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        backend = StoreBackend("files")
+
+        backend.upsert(
+            _make_record(
+                rid="pub1", text="public record", scope=Scope(name="default", visibility="public")
+            )
+        )
+        backend.upsert(
+            _make_record(
+                rid="priv1",
+                text="private record",
+                scope=Scope(name="default", visibility="private"),
+            )
+        )
+
+        results = backend.get_many(
+            ["pub1", "priv1"], scope=Scope(name="default", visibility="private")
+        )
+        assert set(results) == {"pub1", "priv1"}
+        assert results["pub1"].text == "public record"
+        assert results["priv1"].text == "private record"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_returns_full_record_never_a_projection(tmp_path) -> None:
+    """get_many round-trips the FULL Record (metadata, hash, type) — never a subset."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        backend = StoreBackend("files")
+        rec = _make_record(
+            rid="full1",
+            text="full record",
+            scope=Scope(name="default", visibility="public"),
+            metadata={"source": "docs", "channel": "general"},
+        )
+        backend.upsert(rec)
+
+        results = backend.get_many(["full1"], scope=Scope(name="default", visibility="public"))
+        got = results["full1"]
+        assert got.id == "full1"
+        assert got.text == "full record"
+        assert got.type == "note"
+        assert got.metadata == {"source": "docs", "channel": "general"}
+        assert got.hash == rec.hash
+        assert got.scope == Scope(name="default", visibility="public")
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_unknown_ids_skipped_silently(tmp_path) -> None:
+    """Dangling/unknown ids are omitted from the result — never raised as an error."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        backend = StoreBackend("files")
+        backend.upsert(
+            _make_record(
+                rid="pub1", text="public record", scope=Scope(name="default", visibility="public")
+            )
+        )
+
+        results = backend.get_many(
+            ["pub1", "does-not-exist"], scope=Scope(name="default", visibility="public")
+        )
+        assert set(results) == {"pub1"}
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_empty_ids_returns_empty_dict(tmp_path) -> None:
+    """get_many([]) short-circuits to an empty dict."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        backend = StoreBackend("files")
+        assert backend.get_many([], scope=Scope(name="default", visibility="public")) == {}
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_home_dir_wins_on_id_collision(tmp_path, monkeypatch) -> None:
+    """When the same id is serveable from both stores, home (read first) wins.
+
+    Mirrors ``search``'s precedence: ``_candidate_read_dirs()`` orders home
+    before repo, and first-dir-wins dedup (``seen.setdefault``) means home's
+    copy is kept.
+    """
+    from eidetic.memory import backend as be
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+
+    home_env = record_to_envelope(
+        _make_record(rid="X", text="home version", scope=Scope(name="default", visibility="public"))
+    )
+    repo_env = record_to_envelope(
+        _make_record(rid="X", text="repo version", scope=Scope(name="default", visibility="public"))
+    )
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        be._GIT_CACHE.clear()
+        dirs = _candidate_read_dirs()
+        assert len(dirs) == 2, dirs
+        home_dir, repo_dir = dirs[0], dirs[1]
+
+        def _fake_get(id, *, scope=None, backend=None, **kwargs):
+            d = os.environ.get("DR_DATA_DIR")
+            if id != "X":
+                return None
+            if d == home_dir:
+                return home_env
+            if d == repo_dir:
+                return repo_env
+            return None
+
+        monkeypatch.setattr(be.drstore, "get", _fake_get)
+
+        results = StoreBackend("files").get_many(
+            ["X"], scope=Scope(name="default", visibility="public")
+        )
+        assert results["X"].text == "home version"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_applies_can_serve_before_dedup(tmp_path, monkeypatch) -> None:
+    """eidetic's own can_serve must run BEFORE id-dedup across stores (mirrors
+    ``test_search_applies_can_serve_before_dedup``'s regression for ``search``).
+
+    Same id "X" exists in BOTH stores with DIFFERENT scopes: a non-serveable
+    private copy in home (read first) and a serveable public copy in repo
+    (read second). The store's own ``get`` is simulated as *unfiltered* — it
+    returns whatever copy lives in that directory regardless of the query
+    scope, just like the real per-backend ``get`` would if eidetic didn't
+    re-check ``can_serve`` itself.
+
+    With the fix (can_serve checked per-dir, before the id is entered into the
+    dedup dict) the home copy is rejected without occupying the "X" slot, so
+    the repo's public copy is picked up and returned. Under the buggy ordering
+    (dedup first, can_serve filtered afterwards) the private home copy would
+    claim "X" first, then get filtered out of the *final* result — dropping
+    "X" entirely. This test fails under that buggy ordering, which is the
+    discriminating property required of this regression test.
+    """
+    from eidetic.memory import backend as be
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+
+    priv_env = record_to_envelope(
+        _make_record(rid="X", text="shared text", scope=Scope(name="default", visibility="private"))
+    )
+    pub_env = record_to_envelope(
+        _make_record(rid="X", text="shared text", scope=Scope(name="default", visibility="public"))
+    )
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(repo))
+        be._GIT_CACHE.clear()
+        dirs = _candidate_read_dirs()
+        assert len(dirs) == 2, dirs
+        home_dir, repo_dir = dirs[0], dirs[1]
+
+        def _unfiltered_get(id, *, scope=None, backend=None, **kwargs):
+            d = os.environ.get("DR_DATA_DIR")
+            if id != "X":
+                return None
+            if d == home_dir:
+                return priv_env  # store does NOT filter — yields the private copy
+            if d == repo_dir:
+                return pub_env
+            return None
+
+        monkeypatch.setattr(be.drstore, "get", _unfiltered_get)
+
+        results = StoreBackend("files").get_many(
+            ["X"], scope=Scope(name="default", visibility="public")
+        )
+        assert "X" in results
+        assert results["X"].scope.visibility == "public"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_get_many_non_files_backend_degrades_to_per_id_get(monkeypatch) -> None:
+    """The mongo/neo4j path calls drstore.get per id against a single store,
+    never raises on a miss, and skips ids that come back None."""
+    from eidetic.memory import backend as be
+
+    present_env = record_to_envelope(
+        _make_record(
+            rid="m1", text="mongo record", scope=Scope(name="default", visibility="public")
+        )
+    )
+
+    calls: list[str] = []
+
+    def _fake_get(id, *, scope=None, backend=None, **kwargs):
+        calls.append(id)
+        if id == "m1":
+            return present_env
+        return None
+
+    monkeypatch.setattr(be.drstore, "get", _fake_get)
+
+    backend = StoreBackend("mongo")
+    results = backend.get_many(["m1", "missing"], scope=Scope(name="default", visibility="public"))
+
+    assert set(results) == {"m1"}
+    assert results["m1"].text == "mongo record"
+    assert calls == ["m1", "missing"]

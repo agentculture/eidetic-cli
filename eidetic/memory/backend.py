@@ -89,6 +89,15 @@ class Backend(Protocol):
         """
         ...
 
+    def get_many(self, ids: list[str], scope: Scope) -> dict[str, Record]:
+        """Fetch multiple records by id, unioned across both candidate store dirs.
+
+        ``data_refinery.store.get`` is single-id *and* single-data-dir; this
+        spans both directories exactly like :meth:`search` does. Unknown ids
+        are omitted from the result rather than raising.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Environment bridge
@@ -418,6 +427,82 @@ class StoreBackend:
             with _translate_errors():
                 backend = drstore.get_backend(self._name, **self._kwargs)
                 return [record_from_envelope(e) for e in backend.all()]
+
+    def get_many(self, ids: list[str], scope: Scope) -> dict[str, Record]:
+        """Fetch the records with *ids* that are visible to *scope*.
+
+        ``data_refinery.store.get`` is single-id *and* single-data-dir, so it
+        cannot by itself span eidetic's home+repo store pair. This method
+        performs the same per-id fetch against every dir in
+        :func:`_candidate_read_dirs` (files backend) or, for mongo/neo4j,
+        degrades to one ``drstore.get`` call per id against that single store
+        — mirroring :meth:`search`'s multi-store union so a later graph
+        traversal resolving ``links``/``supersedes`` ids sees both stores
+        exactly like a query does.
+
+        Returns a ``dict`` keyed by id — a natural shape for id-driven lookup
+        (the traversal engine's primary use) that lets callers test
+        membership and access hits in O(1) without re-deriving ids from a
+        list. Values are full :class:`Record` round-trips (never a
+        projection), matching :meth:`search`. An id absent from every store,
+        or present only under a non-serveable scope, is simply missing from
+        the returned dict — dangling ``links``/``supersedes`` ids are
+        tolerated, not an error.
+
+        Ordering mirrors ``search``: for the files backend, ``can_serve`` is
+        checked per store dir *before* the id enters the dedup map, so a
+        non-serveable duplicate (e.g. a private copy in the home store) can
+        never occupy an id's slot and shadow a serveable copy found in a
+        later dir (e.g. a public copy in the repo store). Home is read before
+        repo, so home wins ties between two serveable copies of the same id.
+        """
+        if not ids:
+            return {}
+        found: dict[str, Record] = {}
+        for data_dir in self._lookup_dirs():
+            self._bridge_for_lookup(data_dir)
+            with _translate_errors():
+                self._collect_serveable(ids, scope, found)
+        return found
+
+    def _lookup_dirs(self) -> list[str | None]:
+        """Store dirs to sweep for an id lookup; ``[None]`` means a single store."""
+        if self._name == "files":
+            return list(_candidate_read_dirs())
+        return [None]
+
+    def _bridge_for_lookup(self, data_dir: str | None) -> None:
+        if data_dir is None:
+            _bridge_env(self._name)
+        else:
+            _bridge_env("files", data_dir=data_dir)
+
+    def _collect_serveable(self, ids: list[str], scope: Scope, found: dict[str, Record]) -> None:
+        """Add every id the bridged store can serve to *found*; first dir wins.
+
+        ``can_serve`` gates entry into *found*, so a non-serveable copy never
+        claims an id's slot and can never shadow a serveable copy living in a
+        later store dir.
+        """
+        for rid in ids:
+            if rid in found:
+                continue
+            record = self._fetch_serveable(rid, scope)
+            if record is not None:
+                found[rid] = record
+
+    def _fetch_serveable(self, rid: str, scope: Scope) -> Record | None:
+        """One id from the bridged store, or ``None`` if absent or not serveable."""
+        env = drstore.get(
+            rid,
+            scope=DRScope(name=scope.name, visibility=scope.visibility),
+            backend=self._name,
+            **self._kwargs,
+        )
+        if env is None:
+            return None
+        record = record_from_envelope(env)
+        return record if can_serve(scope, record.scope) else None
 
 
 # ---------------------------------------------------------------------------

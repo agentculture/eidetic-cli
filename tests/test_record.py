@@ -130,3 +130,73 @@ def test_added_by_defaults_none_when_missing() -> None:
     }
     r = Record.from_dict(data)
     assert r.added_by is None
+
+
+# ---------------------------------------------------------------------------
+# recall_count float tolerance (t3 — groundwork for graded reinforcement)
+# ---------------------------------------------------------------------------
+
+
+def test_recall_count_float_round_trips() -> None:
+    """A fractional recall_count (graded/hop-decayed reinforcement) round-trips exactly."""
+    r = Record(
+        id="rc-float",
+        text="t",
+        type="note",
+        hash="",
+        metadata={},
+        scope=_default_scope(),
+        recall_count=2.5,
+    )
+    restored = Record.from_dict(r.to_dict())
+    assert restored.recall_count == 2.5
+    assert isinstance(restored.recall_count, float)
+
+
+def test_recall_count_default_stays_int() -> None:
+    """The default recall_count (0) stays an int end to end.
+
+    Untouched (never-recalled) records must keep serialising 'recall_count': 0
+    (int), not 0.0 (float) -- byte-identical JSON output for legacy records.
+    """
+    r = Record(id="rc-default", text="t", type="note", hash="", metadata={}, scope=_default_scope())
+    assert r.recall_count == 0
+    assert isinstance(r.recall_count, int)
+    d = r.to_dict()
+    assert isinstance(d["recall_count"], int)
+    restored = Record.from_dict(d)
+    assert isinstance(restored.recall_count, int)
+    assert restored.recall_count == 0
+
+
+def test_recall_count_int_value_not_coerced_to_float() -> None:
+    """An explicit integer recall_count is preserved as int, not upcast to float."""
+    r = Record(
+        id="rc-int-7",
+        text="t",
+        type="note",
+        hash="",
+        metadata={},
+        scope=_default_scope(),
+        recall_count=7,
+    )
+    d = r.to_dict()
+    assert isinstance(d["recall_count"], int)
+    restored = Record.from_dict(d)
+    assert isinstance(restored.recall_count, int)
+    assert restored.recall_count == 7
+
+
+def test_recall_count_legacy_missing_key_defaults_to_int_zero() -> None:
+    """from_dict on a dict lacking 'recall_count' defaults to int 0, not float 0.0."""
+    data = {
+        "id": "legacy-rc",
+        "text": "legacy record",
+        "type": "note",
+        "hash": "h",
+        "metadata": {},
+        "scope": {"name": "default", "visibility": "public"},
+    }
+    r = Record.from_dict(data)
+    assert r.recall_count == 0
+    assert isinstance(r.recall_count, int)

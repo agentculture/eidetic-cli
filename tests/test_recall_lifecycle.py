@@ -69,6 +69,15 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _hits(capsys) -> list[dict]:
+    """Return the items of the ``recall --json`` composite bundle on stdout.
+
+    ``recall --json`` emits ONE object — ``{query, mode, truncated, items}`` —
+    where each item is a full record plus its ``tier``/``depth`` labels.
+    """
+    return json.loads(capsys.readouterr().out)["items"]
+
+
 # ---------------------------------------------------------------------------
 # 1. Lifecycle filtering
 # ---------------------------------------------------------------------------
@@ -82,7 +91,7 @@ def test_default_recall_excludes_shadowed(
     args = parser.parse_args(["recall", "record", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "shadowed1" not in ids, "default recall must exclude shadowed records"
 
@@ -95,7 +104,7 @@ def test_default_recall_excludes_archived(
     args = parser.parse_args(["recall", "record", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "archived1" not in ids, "default recall must exclude archived records"
 
@@ -108,7 +117,7 @@ def test_default_recall_returns_active_records(
     args = parser.parse_args(["recall", "record", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "active1" in ids or "active2" in ids, "default recall must return active records"
 
@@ -123,7 +132,7 @@ def test_include_shadowed_flag_returns_shadowed(
     )
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "shadowed1" in ids, "--include-shadowed must include shadowed records"
     # Archived must still be excluded unless --include-archived is also passed
@@ -140,7 +149,7 @@ def test_include_archived_flag_returns_archived(
     )
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "archived1" in ids, "--include-archived must include archived records"
     # Shadowed must still be excluded unless --include-shadowed is also passed
@@ -165,7 +174,7 @@ def test_both_flags_return_all_lifecycle_states(
     )
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     ids = {h["id"] for h in hits}
     assert "active1" in ids or "active2" in ids
     assert "shadowed1" in ids
@@ -193,7 +202,7 @@ def test_lifecycle_filter_applied_before_top_k(data_dir: str, capsys) -> None:
     )
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     for hit in hits:
         assert (
             hit.get("lifecycle", "active") == "active"
@@ -213,7 +222,7 @@ def test_recall_json_output_has_numeric_signal(
     args = parser.parse_args(["recall", "record", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     assert len(hits) > 0, "there should be some hits for this query"
     for hit in hits:
         assert "signal" in hit, f"hit {hit['id']} missing 'signal' field"
@@ -228,7 +237,7 @@ def test_recall_signal_in_valid_range(data_dir: str, mixed_lifecycle_seeded: Non
     args = parser.parse_args(["recall", "record", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     for hit in hits:
         sig = hit["signal"]
         assert 0.0 <= sig <= 1.0, f"signal {sig} out of [0, 1] range for hit {hit['id']}"
@@ -248,14 +257,14 @@ def test_passive_reinforcement_bumps_recall_count(data_dir: str, capsys) -> None
     args = parser.parse_args(["recall", "reinforcement", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    first_hits = json.loads(capsys.readouterr().out)
+    first_hits = _hits(capsys)
     assert any(h["id"] == "reinforce1" for h in first_hits), "record should be a hit"
 
     # Now do a second recall and check recall_count advanced
     args2 = parser.parse_args(["recall", "reinforcement", "--mode", "exact", "--json"])
     rc2 = args2.func(args2)
     assert rc2 == 0
-    second_hits = json.loads(capsys.readouterr().out)
+    second_hits = _hits(capsys)
     hit2 = next(h for h in second_hits if h["id"] == "reinforce1")
     # After the first recall bumped recall_count to 1, the second recall emits
     # the state *at query time* (which is 1) and bumps to 2 in the store.
@@ -274,14 +283,14 @@ def test_passive_reinforcement_sets_last_recall(data_dir: str, capsys) -> None:
     args = parser.parse_args(["recall", "last recall", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    first_hits = json.loads(capsys.readouterr().out)
+    first_hits = _hits(capsys)
     assert any(h["id"] == "lastrecall1" for h in first_hits), "record should be a hit"
 
     # Second recall sees last_recall now set (from the first recall's bump)
     args2 = parser.parse_args(["recall", "last recall", "--mode", "exact", "--json"])
     rc2 = args2.func(args2)
     assert rc2 == 0
-    second_hits = json.loads(capsys.readouterr().out)
+    second_hits = _hits(capsys)
     hit2 = next(h for h in second_hits if h["id"] == "lastrecall1")
     assert (
         hit2["last_recall"] is not None
@@ -302,7 +311,7 @@ def test_first_recall_emits_pre_bump_recall_count(data_dir: str, capsys) -> None
     args = parser.parse_args(["recall", "pre bump", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     hit = next(h for h in hits if h["id"] == "prebump1")
     assert (
         hit["recall_count"] == 0
@@ -318,7 +327,7 @@ def test_first_recall_emits_pre_bump_last_recall(data_dir: str, capsys) -> None:
     args = parser.parse_args(["recall", "last recall pre", "--mode", "exact", "--json"])
     rc = args.func(args)
     assert rc == 0
-    hits = json.loads(capsys.readouterr().out)
+    hits = _hits(capsys)
     hit = next(h for h in hits if h["id"] == "prebump2")
     assert (
         hit["last_recall"] is None
@@ -336,7 +345,7 @@ def test_reinforcement_verified_by_second_recall(data_dir: str, capsys) -> None:
     args1 = parser.parse_args(["recall", "roundtrip reinforcement", "--mode", "exact", "--json"])
     rc = args1.func(args1)
     assert rc == 0
-    hits1 = json.loads(capsys.readouterr().out)
+    hits1 = _hits(capsys)
     hit1 = next(h for h in hits1 if h["id"] == "roundtrip1")
     assert (
         hit1["recall_count"] == 5
@@ -346,7 +355,7 @@ def test_reinforcement_verified_by_second_recall(data_dir: str, capsys) -> None:
     args2 = parser.parse_args(["recall", "roundtrip reinforcement", "--mode", "exact", "--json"])
     rc2 = args2.func(args2)
     assert rc2 == 0
-    hits2 = json.loads(capsys.readouterr().out)
+    hits2 = _hits(capsys)
     hit2 = next(h for h in hits2 if h["id"] == "roundtrip1")
     assert (
         hit2["recall_count"] == 6
@@ -366,7 +375,7 @@ def test_passive_reinforcement_does_not_persist_score_or_signal(data_dir: str, c
     parser = _build_parser()
     args = parser.parse_args(["recall", "score leak regression", "--mode", "exact", "--json"])
     assert args.func(args) == 0
-    emitted = json.loads(capsys.readouterr().out)
+    emitted = _hits(capsys)
     # The emitted hit still exposes both (output contract is unchanged)...
     hit = next(h for h in emitted if h["id"] == "noleak1")
     assert hit["score"] is not None

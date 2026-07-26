@@ -37,8 +37,13 @@ class Record:
     # (t3 implements the bump).
     last_recall: str | None = None
 
-    # Running count of how many times this record has been recalled.
-    recall_count: int = 0
+    # Running count of how many times this record has been recalled. An int
+    # for a plain recall hit; a later reinforcement scheme (graded bumps: a
+    # full +1.0 for a primary hit, a decaying fraction for a record discovered
+    # by graph traversal at hop-depth d) makes this a float, so the type
+    # tolerates both. The default stays the int 0 (not 0.0) so an untouched,
+    # never-recalled record keeps serialising byte-identically to before.
+    recall_count: int | float = 0
 
     # IDs of related memory records (corroborating facts, predecessor/
     # successor records, linked claims).  Never use a mutable default arg —
