@@ -486,31 +486,33 @@ def test_sweep_both_dirs(tmp_path: Path, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_mongo_neo4j_unaffected() -> None:
+def test_mongo_neo4j_unaffected(monkeypatch) -> None:
     """get_backend('mongo') / ('neo4j') path resolution is unchanged.
 
     Assert that _bridge_env for mongo/neo4j only sets DR_MONGO_URI / DR_NEO4J_URI
     and does NOT apply any repo/home dir logic.
     """
-    # Clean slate.
+    # Clean slate. Deleting through monkeypatch records each var's prior state,
+    # so teardown restores it -- including the DR_* names _bridge_env assigns to
+    # os.environ directly below, which would otherwise leak into later tests.
     for k in ("DR_MONGO_URI", "DR_NEO4J_URI", "EIDETIC_MONGO_URI", "NEO4J_URI"):
-        os.environ.pop(k, None)
+        monkeypatch.delenv(k, raising=False)
 
     # mongo: _bridge_env should only set DR_MONGO_URI when EIDETIC_MONGO_URI is set.
-    os.environ["EIDETIC_MONGO_URI"] = "mongodb://test:27017"
+    monkeypatch.setenv("EIDETIC_MONGO_URI", "mongodb://test:27017")
     be._bridge_env("mongo")
     assert os.environ.get("DR_MONGO_URI") == "mongodb://test:27017"
     # DR_DATA_DIR must NOT be set by the mongo bridge.
     # (It may be left from a prior test, so we only check it wasn't set by this call.)
-    os.environ.pop("EIDETIC_MONGO_URI", None)
-    os.environ.pop("DR_MONGO_URI", None)
+    monkeypatch.delenv("EIDETIC_MONGO_URI", raising=False)
+    monkeypatch.delenv("DR_MONGO_URI", raising=False)
 
     # neo4j: _bridge_env should only set DR_NEO4J_URI when NEO4J_URI is set.
-    os.environ["NEO4J_URI"] = "bolt://test:7687"
+    monkeypatch.setenv("NEO4J_URI", "bolt://test:7687")
     be._bridge_env("neo4j")
     assert os.environ.get("DR_NEO4J_URI") == "bolt://test:7687"
-    os.environ.pop("NEO4J_URI", None)
-    os.environ.pop("DR_NEO4J_URI", None)
+    monkeypatch.delenv("NEO4J_URI", raising=False)
+    monkeypatch.delenv("DR_NEO4J_URI", raising=False)
 
     # Verify get_backend("mongo") and get_backend("neo4j") don't raise
     # (they create StoreBackend instances; connection errors happen later).

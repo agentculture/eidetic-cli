@@ -218,6 +218,21 @@ def test_depth_bound_with_only_unservable_records_beyond_is_not_truncated() -> N
     assert result.truncated is False
 
 
+def test_depth_bound_whose_only_edges_lead_back_to_visited_nodes_is_not_truncated() -> None:
+    """A cycle closing exactly at the depth bound cut nothing — nothing lies beyond.
+
+    ``B`` sits at the bound and its only edge points back to the already-visited
+    seed. Counting that edge would report truncation for material the caller has
+    already been given, which is the same over-reporting the dangling and
+    out-of-scope cases guard against.
+    """
+    a = _rec("A", links=["B"])
+    b = _rec("B", links=["A"])
+    result = discover([a], _fetcher(a, b), _accept_all, max_depth=1, max_nodes=20)
+    assert _ids(result) == ["B"]
+    assert result.truncated is False
+
+
 def test_max_depth_zero_discovers_nothing() -> None:
     a = _rec("A", links=["B"])
     b = _rec("B")
