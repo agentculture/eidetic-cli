@@ -1,0 +1,35 @@
+{
+  "plan_slug": "composite-recall-bundle-37",
+  "schema_version": 1,
+  "created": "2026-07-26T04:45:33Z",
+  "updated": "2026-07-26T04:45:40Z",
+  "deviations": [
+    {
+      "id": "d1",
+      "what": "add t9 \u2014 replace the client-side BFS with a data_refinery store.neighbors() passthrough and bump the [store] pin past 0.6",
+      "task_ref": "t1",
+      "reason": "data-refinery-cli converged a spec for its issue #20 on 2026-07-26 (docs/specs/2026-07-26-graph-edges-bounded-traversal-vector-lines-issue-2.md, currently under evaluation) that ships store.neighbors() with per-hop can_serve, a truncated flag defined to match eidetic's genuinely-admissible-cut semantics, and real LINKS_TO/SUPERSEDES relationships \u2014 so the plan's client-side BFS is a documented interim rather than the endpoint. The same spec closes tier 3 by decision ('record text is the atomic citable unit') instead of building persisted vector lines, so t6's degradation docs change meaning too: pending-upstream becomes closed-by-decision.",
+      "affects": [
+        "t4",
+        "t6",
+        "t7"
+      ],
+      "origin": "user",
+      "status": "approved",
+      "classification": "needs-follow-up"
+    },
+    {
+      "id": "d2",
+      "what": "add t10 \u2014 live-test the store.neighbors() passthrough against the real data-refinery stack (mongo + neo4j), not just the files backend",
+      "task_ref": "t7",
+      "reason": "Neither side's CI exercises real graph edges: data-refinery's spec pins hermetic tests against an injected fake Cypher session with no services block, and eidetic's bundle e2e suite is files-backend only. So real neo4j LINKS_TO/SUPERSEDES traversal, the cross-backend equivalence claim, and the placeholder-node convention are all unproven until someone runs them against a live stack \u2014 which is eidetic's job as the pinned consumer, mirroring the live-migration verification done for PR #15.",
+      "affects": [
+        "t1",
+        "t2"
+      ],
+      "origin": "user",
+      "status": "approved",
+      "classification": "needs-follow-up"
+    }
+  ]
+}
