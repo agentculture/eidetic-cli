@@ -148,14 +148,15 @@ Quoted verbatim from the `devague summary` skeleton:
 
 ## Remaining Work / Follow-up
 
-- **`t8` — post the three migration notices.** Drafts are committed at
-  `docs/notices/2026-07-26-composite-recall-bundle-migration-notices.md`.
-  Blocked on two decisions that are the user's to make: (1) whether notice 2
-  goes out as one umbrella issue or as a rollout-cli recipe across the ~57
-  repos carrying the `/recall` wrapper, and (2) whether notice 1 comments on
-  closed issue #3 (keeping the audit trail on the consumer contract) or opens a
-  fresh issue referencing it. Nothing posts until PR #38 merges, so the version
-  the notices name is real. Owner: user decides, main agent posts.
+- **`t8` — post the three migration notices.** Drafts are committed and
+  decision-complete at
+  `docs/notices/2026-07-26-composite-recall-bundle-migration-notices.md`: notice
+  1 goes on closed issue #3 (keeping the audit trail on the consumer contract
+  thread), notice 3 on issue #37, and notice 2 as a single umbrella issue rather
+  than a rollout-cli fan-out across the ~57 `/recall` wrapper repos — the
+  migration is one line and print-only wrappers are unaffected. **The only
+  remaining gate is PR #38 merging**, so the 0.13.0 the notices name is really
+  on `main`. Owner: main agent posts on merge.
 - **`t9` (`d1`) — adopt `data_refinery.store.neighbors()`.** Swap
   `recall`'s `_traverse` for a thin mapping from the store's result to
   `TraversalNode(record, depth, via)` + `truncated`, and bump the pin past

@@ -1,14 +1,15 @@
 # Migration notices — composite recall bundle (0.13.0)
 
-**Status: DRAFTS. Nothing has been posted.** These three notices are committed
-here so they are reviewable in PR #38 and durable beyond the session that wrote
-them — not because they have gone out. They are plan task `t8`, which is
-recorded as `blocked` in
+**Status: APPROVED DRAFTS, awaiting the merge. Nothing has been posted.** These
+three notices are committed here so they are reviewable in PR #38 and durable
+beyond the session that wrote them — not because they have gone out. They are
+plan task `t8`, recorded as `blocked` in
 [the delivery summary](../deliveries/2026-07-26-composite-recall-bundle-37.md).
 
-Two decisions are the user's to make before anything posts (see "Open items" at
-the end), and the notices go out **after** PR #38 merges so the version they
-name is real.
+Every delivery decision is now settled (see "Open items" at the end): notice 1
+goes on closed issue #3, notice 2 goes out as a single umbrella issue rather
+than a 57-repo fan-out, and all three post **after** PR #38 merges so the
+version they name is real. The only remaining gate is the merge itself.
 
 The signature is appended automatically by `agtag` (`- eidetic-cli (Claude)`) —
 it is deliberately not hand-written in the bodies below.
@@ -81,12 +82,12 @@ contract thread) — `post-comment.sh --repo agentculture/eidetic-cli --number 3
 
 ## Notice 2 — the `/recall` wrapper fan-out (~57 repos)
 
-**Open question for the user:** file one tracked umbrella issue, or drive a
-rollout-cli recipe like the last fan-out? The draft below assumes the umbrella
-issue; the body works either way.
+**Decided: one umbrella issue**, not a rollout-cli fan-out. The migration is a
+single line (`.items`), and a wrapper that only *prints* recall output does not
+break at all — so 57 PRs would cost far more triage than the change is worth.
 
-**Target:** a new issue on `agentculture/eidetic-cli` (umbrella, referenced
-from each downstream) or per-repo via the rollout recipe.
+**Target:** a new issue on `agentculture/eidetic-cli`, referenced from each
+downstream repo as needed.
 
 > ## `/recall` skill wrapper: update for the bundle-shaped recall payload
 >
@@ -201,15 +202,21 @@ from each downstream) or per-repo via the rollout recipe.
 
 ## Open items
 
-1. **Notice 2 delivery** — umbrella issue, or a rollout-cli recipe across the
-   ~57 repos carrying the `/recall` wrapper?
-2. **Notice 1 target** — comment on closed issue #3, or open a fresh issue
-   referencing it? Commenting keeps the audit trail on the consumer contract
-   thread.
-3. **Nothing posts without approval**, and nothing posts before PR #38 merges,
-   so the version the notices name is real.
+All settled — nothing here is still an open question.
 
-Resolved while drafting: the version placeholder is settled as **0.13.0**
-(`t6`'s minor bump), and the JSON payload in notice 1 is verbatim from a live
-run against a temporary store on the merged branch (`--mode keyword`, two
-linked records, one primary and one traversal) rather than invented.
+1. **Notice 2 delivery** — *resolved:* one umbrella issue on `eidetic-cli`, not
+   a rollout-cli fan-out across the ~57 `/recall` wrapper repos. The migration
+   is one line, and wrappers that only print recall output are unaffected.
+2. **Notice 1 target** — *resolved:* comment on closed issue #3, keeping the
+   audit trail on the consumer contract thread that pinned the old shape.
+3. **Timing** — *resolved:* all three post **after** PR #38 merges, so the
+   0.13.0 they name is actually on `main`.
+4. **Version placeholder** — *resolved:* **0.13.0** (`t6`'s minor bump).
+5. **Payload authenticity** — *resolved:* the JSON in notice 1 is verbatim from
+   a live run against a temporary store on the merged branch (`--mode keyword`,
+   two linked records, one primary and one traversal) rather than invented.
+
+Remaining gate: **the merge**. Once PR #38 lands, post notice 1 as a comment on
+issue #3, notice 3 as a comment on issue #37, and notice 2 as a new umbrella
+issue — all via the `communicate` skill, which appends the
+`- eidetic-cli (Claude)` signature automatically.
