@@ -49,15 +49,42 @@ recall.sh — search the shared eidetic memory store (the /recall skill).
 Usage:
   recall.sh "<query>" [--mode exact|approximate|keyword|hybrid] [--top-k N] \
             [--alpha F] [--case-sensitive] [--filter KEY=VALUE]... \
+            [--rerank] [--rerank-pool N] [--rerank-threshold F] \
+            [--rerank-allow-fallback] \
             [--backend files|mongo|neo4j] [--scope NAME] [--visibility public|private] \
             [--json]
 
 Modes (default: hybrid):
-  exact        case-insensitive verbatim substring (--case-sensitive to tighten); offline-safe
+  exact        case-insensitive verbatim substring (--case-sensitive to tighten);
+               offline-safe ONLY without --rerank
   approximate  vector cosine / semantic similarity (uses the embed server)
-  keyword      BM25 lexical; only records sharing a query term; offline-safe
+  keyword      BM25 lexical; only records sharing a query term;
+               offline-safe ONLY without --rerank
   hybrid       alpha*approximate + (1-alpha)*keyword (--alpha, default 0.5);
                degrades to keyword-only when the embed server is offline
+
+Reranking (opt-in, off by default; accepted with EVERY mode):
+  --rerank                 second pass over the search hits with the cross-encoder
+                           reranker. Runs before the --top-k slice, so the pool can
+                           rescue a record the mode ranked below k. Items are then
+                           ordered by a new rerank_score while `score` keeps its
+                           search value — re-sorting by `score` disagrees with the
+                           emitted order. Posts the pooled records' TEXT to the
+                           reranker endpoint. Fails closed (exit 2) when the remote
+                           reranker does not answer.
+  --rerank-pool N          how many lifecycle-visible hits are reconsidered, and the
+                           reranker batch size (default 50). Keep it wider than
+                           --top-k: under --rerank only pooled records reach the
+                           result set, so a narrower pool shrinks it.
+  --rerank-threshold F     drop hits at or below this rerank score (no default —
+                           --rerank alone only reorders). The reranker is near-binary,
+                           so a cutoff also removes topically-relevant SUPPORTING
+                           records, not just junk: on the live lane, direct answers
+                           scored ~0.999 while genuinely on-topic support scored
+                           ~0.004, against a junk floor of ~1.7e-04. A literal 0.0
+                           drops nothing (the scores are strictly positive).
+  --rerank-allow-fallback  accept the local lexical-overlap lane when the remote
+                           reranker is silent, instead of failing closed.
 
 Every flag is forwarded verbatim to `eidetic recall`. See `eidetic explain recall`.
 EOF

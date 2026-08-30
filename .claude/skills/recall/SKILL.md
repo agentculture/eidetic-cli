@@ -8,6 +8,13 @@ description: >
   (a weighted blend of vector+keyword, the default) — each hit carrying its
   text, full metadata, a relevance `score`, and a freshness `signal`. Recall
   passively reinforces matched records (bumps last_recall + recall_count).
+  Opt-in --rerank (off by default, accepted with every mode) adds a
+  cross-encoder second pass over --rerank-pool (default 50) hits before the
+  --top-k slice, ordering items by a new `rerank_score` while `score` keeps
+  its search value; it needs the remote lane — so exact/keyword are
+  offline-safe only WITHOUT it — and fails closed unless
+  --rerank-allow-fallback. --rerank-threshold drops hits, but the reranker is
+  near-binary, so a cutoff also removes topically-relevant supporting records.
   Shadowed and archived records are excluded by default; use
   --include-shadowed / --include-archived to retrieve them. The store uses
   visibility-aware routing: PUBLIC records inside a git repo go to
@@ -52,15 +59,58 @@ exactly `eidetic recall …`. Run it from anywhere; the store is the same.
 
 | Mode | What it matches | Needs embed server? |
 |------|-----------------|---------------------|
-| `exact` | case-insensitive verbatim substring (`--case-sensitive` to tighten) | no — offline-safe |
+| `exact` | case-insensitive verbatim substring (`--case-sensitive` to tighten) | no — offline-safe, **but only without `--rerank`** |
 | `approximate` | vector cosine / semantic similarity | yes (falls back offline) |
-| `keyword` | BM25 lexical; only records sharing a query term | no — offline-safe |
+| `keyword` | BM25 lexical; only records sharing a query term | no — offline-safe, **but only without `--rerank`** |
 | `hybrid` | `alpha*approximate + (1-alpha)*keyword` (`--alpha`, default 0.5) | uses it when up |
 
 `hybrid` is the default because the two signals cover each other's blind spots:
 vector catches paraphrases, keyword catches exact ids/quotes. When the embed
 server is unreachable, `hybrid` collapses to keyword-only (it never fuses
 meaningless offline-fallback cosine).
+
+`--rerank` is accepted with **every** mode, and it makes every mode depend on a
+reachable remote lane — including the two the table calls offline-safe. See
+[Reranking](#reranking---rerank-opt-in) below.
+
+## Reranking (`--rerank`, opt-in)
+
+`--rerank` runs a second pass over the search hits with the cross-encoder
+reranker. Off by default. It runs after lifecycle filtering and *before* the
+`--top-k` slice, so the wider `--rerank-pool` (default `50`) can rescue a
+record the search mode ranked below k — the reason the pool exists. The same
+width cuts the other way: with `--rerank`, only pooled records reach the
+result set, so a pool *narrower* than `--top-k` shrinks it.
+
+- **Ordering diverges from `score`.** Items come back ordered by the new
+  `rerank_score`; `score` keeps its hybrid/BM25 value and is never overwritten.
+  If you re-sort the hits by `score`, you get a *different* order than the one
+  emitted — keep the emitted order, or sort by `rerank_score`. When the stage
+  ran, the payload also carries
+  `"rerank": {"lane": "remote"|"local"|null, "dropped": N}`.
+- **`exact`/`keyword` are offline-safe only without it.** The stage asks the
+  remote reranker and **fails closed** — a `CliError` at exit `2` naming
+  `EIDETIC_EMBED_API_KEY` / `COLLEAGUE_API_KEY` / `CULTURE_VLLM_API_KEY` —
+  rather than serving local lexical-overlap numbers as cross-encoder scores.
+  `--rerank-allow-fallback` opts in to that local lane; taking it names the
+  lane in the payload, warns once on stderr, and skips the remote-calibrated
+  `--rerank-threshold`.
+- **A threshold removes supporting records too.** The cross-encoder is
+  near-binary. Measured on the live lane for *"how does eidetic recall traverse
+  the links graph"*, the two records that directly answer it scored `0.9998`
+  and `0.9963`, while two records that genuinely *are* about traversal (the
+  pure engine; the `max_nodes`/`truncated` bounds) scored only `0.0048` and
+  `0.0035` — against an irrelevant-document floor of about `1.7e-04`. Relevant
+  supporting material sits an order of magnitude above noise and three below a
+  direct answer, so any cutoff clearing the noise discards it too. Use
+  `--rerank-threshold` only when you want *direct answers only*. There is no
+  default cutoff, and a literal `0.0` drops nothing (the scores are strictly
+  positive).
+
+**Exposure:** `--rerank` POSTs the pooled records' `text` to the reranker
+endpoint, `--rerank-pool` documents per batch. Without it only the query string
+leaves the process — worth knowing before reranking a `--visibility private`
+query.
 
 ## Output fields
 
@@ -72,7 +122,8 @@ Each hit in `--json` output includes:
 | `text` | the stored chunk |
 | `type` | record type |
 | `metadata` | full provenance, round-tripped verbatim from ingest |
-| `score` | relevance score from the chosen search mode (freshness-blended) |
+| `score` | relevance score from the chosen search mode (freshness-blended). Never overwritten by `--rerank` — so under `--rerank` it does *not* explain the emitted order |
+| `rerank_score` | present only when `--rerank` ran: the cross-encoder's score, and the field the items are actually ordered by |
 | `signal` | freshness strength in [0, 1]; computed at recall time from age, recall frequency, and staleness |
 | `created` | ISO-8601 ingest date (may be DATE_UNKNOWN for legacy records) |
 | `last_recall` | ISO-8601 timestamp of the most recent recall hit (null if never recalled) |
@@ -133,6 +184,14 @@ compete on score/signal just like active ones when included.
   record; only a private record is scope-isolated). Pass `--scope` to query a
   different scope entirely; a wheel install with no `culture.yaml` falls back to
   the CLI default `default`/`public`.
+- `--rerank` — opt in to the cross-encoder second pass (default off; works with
+  every `--mode`). Orders by `rerank_score`, not `score`; needs the remote lane.
+- `--rerank-pool N` — how many lifecycle-visible hits `--rerank` reconsiders,
+  and the reranker batch size (default 50). Keep it wider than `--top-k`.
+- `--rerank-threshold F` — drop hits at or below this rerank score (no default;
+  `--rerank` alone only reorders). Read the near-binary caveat above first.
+- `--rerank-allow-fallback` — accept the local lexical lane when the remote
+  reranker is silent, instead of failing closed at exit 2.
 - `--backend files|mongo|neo4j` — default `files` (the shared home-dir store).
 - `--include-shadowed` — include shadowed records in results (excluded by default).
 - `--include-archived` — include archived records in results (excluded by default).
@@ -164,7 +223,8 @@ bash .claude/skills/recall/scripts/recall.sh "power" --include-archived --includ
 - The embed endpoint defaults to the local **lobes fleet gateway**
   (`http://localhost:8001/v1`, model `Qwen/Qwen3-Embedding-0.6B`, reranker
   `Qwen/Qwen3-Reranker-0.6B`); override with `EIDETIC_EMBED_URL` /
-  `EIDETIC_EMBED_MODEL` / `EIDETIC_RERANK_MODEL`. `exact`/`keyword` ignore it.
+  `EIDETIC_EMBED_MODEL` / `EIDETIC_RERANK_MODEL`. `exact`/`keyword` ignore it —
+  unless `--rerank` is passed, which routes every mode through this endpoint.
   The gateway fronts *every* role on that one port — the per-role vLLM
   containers are not published to the host, so a per-gear port is always wrong.
   Confirm the live value with `lobes endpoint embedder`.

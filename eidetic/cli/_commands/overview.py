@@ -62,7 +62,17 @@ _VERBS = [
     "remember — ingest memory records (JSON or NDJSON)",
     "recall — search the memory store; returns a composite bundle (primary "
     "hits + a bounded links/supersedes traversal), tier-labelled and "
-    "graded-reinforced, not a bare list (--depth/--max-nodes/--source)",
+    "graded-reinforced, not a bare list (--depth/--max-nodes/--source). "
+    "--rerank is an opt-in cross-encoder second pass over the primary tier "
+    "(off by default, accepted with every --mode): it reconsiders "
+    "--rerank-pool (default 50) lifecycle-visible hits before the --top-k "
+    "slice — posting their text to the reranker endpoint — and orders items "
+    "by rerank_score while `score` keeps its search value, so re-sorting by "
+    "`score` disagrees with the emitted order. It fails closed (exit 2) on a "
+    "silent remote lane unless --rerank-allow-fallback, so exact/keyword are "
+    "offline-safe only WITHOUT --rerank. --rerank-threshold drops hits, but "
+    "the reranker is near-binary, so a cutoff also removes topically-relevant "
+    "supporting records (and 0.0 drops nothing)",
     "sweep — apply lifecycle transitions (shadow/archive) across the store",
     "migrate qq — import legacy QQ memory (files/mongo/neo4j)",
     "migrate store — upgrade store format (Record -> Envelope JSONL)",
