@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-08-30
+
+### Added
+
+- `recall --rerank` — an opt-in second pass over the primary tier using the lobes cross-encoder (`EmbedClient.rerank_detect`), which has shipped unused since the embed client was written. Items gain a `rerank_score` field; the existing `score` keeps its hybrid/BM25 value and is never overwritten, so both judgements stay visible.
+- `--rerank-pool N` (default 50) — the number of lifecycle-visible hits the stage reconsiders. Deliberately wider than `--top-k`: the pool is the only place a record the search mode ranked below k can be rescued, so the stage is a rescue pass rather than a reshuffle of an already-decided answer.
+- `--rerank-threshold F` (no default) — opt in to DROPPING hits below a relevance cutoff. Without it, `--rerank` only reorders. When a threshold does drop hits, the bundle reports the count: a relevance cut is a cut, and issue #37 already ruled out silent ones.
+- `--rerank-allow-fallback` — permit the local lexical-overlap lane when the remote reranker does not answer.
+- `eidetic/memory/rerank.py` — a pure ordering + threshold engine in the house style of `traverse.py` and `lifecycle.py`: no I/O, no clock, no store import.
+- `Backend.embed_client` — a named, documented seam for obtaining the embed client, replacing reaching into the private `_embed` attribute.
+
+### Changed
+
+- `--rerank` FAILS CLOSED. The remote cross-encoder and the local lexical fallback emit numbers on the same 0..1 scale with entirely different distributions (measured: remote 0.968 on-topic vs 3.2e-05 for a distractor; lexical 0.034 vs 0.016), so silently serving the latter as "reranked" would be a lie. An unanswered remote lane now raises rather than degrading quietly; `--rerank-allow-fallback` opts in, and when the fallback is taken the bundle names the lane, a once-per-process warning goes to stderr, and the remote-calibrated threshold is NOT applied to lexical scores.
+- `EmbedClient.rerank()` is now a thin wrapper over the new `rerank_detect()`, which returns `(scores, online)` — mirroring how `embed_detect()` already reports its lane. The old signature is unchanged for existing callers.
+- Docs corrected across all five flag-listing surfaces: `exact` and `keyword` are offline-safe only WITHOUT `--rerank`, and under `--rerank` the emitted order follows `rerank_score` rather than `score`.
+
+### Fixed
+
+- `_remote_rerank` no longer maps an index missing from the server's response to `0.0`. A response that omits a document is a server error, not a zero-relevance document — and combined with a threshold that default would have silently deleted records from recall. It now raises, so the call degrades visibly to the lexical lane instead.
+
 ## [0.13.0] - 2026-07-26
 
 ### Added
