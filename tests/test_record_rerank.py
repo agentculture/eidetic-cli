@@ -19,7 +19,7 @@ import pytest
 from data_refinery.store import Envelope
 from data_refinery.store import Scope as DRScope
 
-from eidetic.memory.backend import record_from_envelope
+from eidetic.memory.backend import record_from_envelope, record_to_envelope
 from eidetic.memory.record import Record
 from eidetic.memory.scope import Scope
 
@@ -161,3 +161,39 @@ def test_rerank_score_never_survives_from_envelope_score_and_signal_control() ->
     assert record.score is None
     assert record.signal is None
     assert record.rerank_score is None
+
+
+def test_rerank_score_is_not_written_into_the_envelope() -> None:
+    """The WRITE side of the guard: record_to_envelope must not persist rerank_score.
+
+    The sibling test above covers the read path (record_from_envelope ignores a
+    leaked key).  This one covers the path that actually writes: today
+    record_to_envelope is an explicit field whitelist that omits rerank_score by
+    construction, so a future edit ADDING it to that whitelist is the realistic
+    regression — and nothing else in the suite would notice.
+
+    Mutation-verify: add ``"rerank_score": record.rerank_score`` to the metadata
+    dict in backend.record_to_envelope → this test FAILS.
+    """
+    record = Record(
+        id="rec-write-guard",
+        text="some text",
+        type="note",
+        hash="abc123",
+        metadata={},
+        scope=Scope(name="default", visibility="public"),
+    )
+    record.rerank_score = 0.99
+    record.score = 0.5
+    record.signal = 0.7
+
+    env = record_to_envelope(record)
+
+    assert "rerank_score" not in env.metadata, (
+        "record_to_envelope must not persist rerank_score — it is a query-time "
+        "artefact, like score and signal."
+    )
+    # Control: the two pre-existing query-time fields are excluded the same way,
+    # so a whitelist that started persisting all three would fail here too.
+    assert "score" not in env.metadata
+    assert "signal" not in env.metadata
