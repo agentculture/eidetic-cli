@@ -252,13 +252,25 @@ class EmbedClient:
     def rerank(self, query: str, docs: list[str]) -> list[float]:
         """Return a score per document indicating relevance to *query*.
 
-        Uses a remote reranker when configured; otherwise falls back to a
-        deterministic lexical overlap score.
+        Thin wrapper over :meth:`rerank_detect` for callers that don't care
+        whether the remote reranker or the offline fallback produced them.
+        """
+        return self.rerank_detect(query, docs)[0]
+
+    def rerank_detect(self, query: str, docs: list[str]) -> tuple[list[float], bool]:
+        """Return ``(scores, online)`` for *query* against *docs*.
+
+        POSTs to the configured endpoint; on any connection error (or a
+        response missing a score for some document) falls back to a
+        deterministic lexical overlap score. ``online`` is ``True`` only when
+        the remote reranker answered — the two lanes score on the same 0..1
+        scale with different meaning, so callers use the flag to tell which
+        lane produced the numbers.
         """
         try:
-            return self._remote_rerank(query, docs)
+            return self._remote_rerank(query, docs), True
         except Exception:
-            return self._local_rerank(query, docs)
+            return self._local_rerank(query, docs), False
 
     # -- remote helpers ------------------------------------------------
 
@@ -307,7 +319,13 @@ class EmbedClient:
         score_map: dict[int, float] = {
             r["index"]: r.get("relevance_score", r.get("score", 0.0)) for r in results
         }
-        return [score_map.get(i, 0.0) for i in range(len(docs))]
+        # A response that omits an index is a server error, not a
+        # zero-relevance document — raise so the caller (rerank_detect)
+        # degrades to the lexical lane instead of scoring the missing doc 0.0.
+        for i in range(len(docs)):
+            if i not in score_map:
+                raise ValueError(f"rerank response missing score for index {i}")
+        return [score_map[i] for i in range(len(docs))]
 
     # -- local fallbacks -----------------------------------------------
 
