@@ -37,7 +37,7 @@ uv run teken cli doctor . --strict  # the agent-first rubric gate CI runs
 | `overview` | Read-only snapshot of the agent **plus** a live Store section covering all stores: per-backend record counts + live/unavailable status (files/mongo/graph), per-scope + lifecycle breakdown, link-connections, and distinct contributors per scope (union of each record's `added_by` and `metadata.author`). Narrow with `--backend`/`--scope`. A down backend degrades to `unavailable` via a fast probe (never crashes). |
 | `doctor` | Check the agent-identity invariants (prompt-file-present, backend-consistency). |
 | `remember` | Ingest memory records — one JSON object or NDJSON on stdin; idempotent upsert by id; stamps `created` date; auto-stamps `added_by` (resolution: `--added-by` flag > `culture.yaml` mesh nick > `None`); accepts `supersedes`/`links`; `--backend`/`--scope`/`--visibility`. |
-| `recall <query>` | Search the store — top-k hits with text + full metadata + `score` + `signal`; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Lifecycle flags: `--include-shadowed`, `--include-archived` (both excluded by default). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. |
+| `recall <query>` | Search the store — top-k hits with text + full metadata + `score` + `signal`; scope-aware (no private→public leak). Four `--mode`s: `exact` (substring), `approximate` (vector), `keyword` (BM25), `hybrid` (blend, default; `--alpha`). Lifecycle flags: `--include-shadowed`, `--include-archived` (both excluded by default). Plus `--top-k`/`--filter`/`--backend`/`--case-sensitive`. Opt-in reranking: `--rerank`, `--rerank-pool N` (default 50), `--rerank-threshold F` (no default), `--rerank-allow-fallback` — see [Reranking](#reranking). |
 | `sweep` | Apply lifecycle transitions (shadow/archive) across the whole store — never deletes, only flips `lifecycle`. Supports `--dry-run`. |
 | `migrate qq` | One-shot idempotent import of legacy QQ memory (core.md/notes.md, MongoDB, Neo4j) into a private scope. |
 | `migrate store` | One-shot idempotent upgrade of an on-disk store from legacy Record-JSONL to Envelope-JSONL. Delegates the rewrite to data-refinery's `store.migrate` endpoint — eidetic constructs no filesystem write path. `--dry-run`/`--data-dir`. |
@@ -88,8 +88,52 @@ live value.
 The gateway routes on the request's `model` field, which is why embed and rerank
 name different models. It also enforces a bearer token: with no key set the
 request 401s and eidetic degrades to a deterministic local lexical fallback —
-recall still answers, but not semantically. Only `approximate`/`hybrid` recall
-use the endpoint; `exact`/`keyword` are pure lexical and work fully offline.
+recall still answers, but not semantically. Without `--rerank`, only
+`approximate`/`hybrid` recall use the endpoint; `exact`/`keyword` are pure
+lexical and work fully offline. **`--rerank` changes that for every mode** —
+see below.
+
+### Reranking
+
+`recall --rerank` is an opt-in second pass over the primary tier with the
+cross-encoder reranker. It is off by default and accepted with every `--mode`.
+The stage runs *after* lifecycle filtering (a shadowed or archived record is
+never shipped to the reranker) and *before* the `--top-k` slice, so the wider
+`--rerank-pool` (default `50`) can rescue a record the search mode ranked below
+k — that rescue is the reason the pool exists. The same width cuts the other
+way: under `--rerank` only pooled records reach the primary tier, so a pool
+*narrower* than `--top-k` shrinks the result set.
+
+Three things to know before turning it on:
+
+- **Ordering diverges from `score`.** Items are ordered by the new
+  `rerank_score` field; the existing `score` keeps its hybrid/BM25 value and is
+  never overwritten. A consumer that re-sorts `items` by `score` will disagree
+  with the order that was emitted — keep the emitted order, or sort by
+  `rerank_score`. When the stage ran, the bundle also carries
+  `"rerank": {"lane": "remote"|"local"|null, "dropped": N}`.
+- **`exact` and `keyword` are offline-safe only *without* `--rerank`.** The
+  stage needs the remote lane, and **fails closed** (exit `2`, naming the
+  API-key variables above) when that lane does not answer, rather than passing
+  local lexical-overlap numbers off as cross-encoder scores.
+  `--rerank-allow-fallback` is the explicit opt-in to the local lane; taking it
+  names the lane in the payload, warns once on stderr, and skips the
+  remote-calibrated `--rerank-threshold`.
+- **`--rerank-threshold` removes supporting records, not just junk.** The
+  cross-encoder is near-binary. Measured against the live lane for *"how does
+  eidetic recall traverse the links graph"*, the two records that directly
+  answer it scored `0.9998` and `0.9963`, while two records that genuinely
+  *are* about traversal (the pure engine; the `max_nodes`/`truncated` bounds)
+  scored only `0.0048` and `0.0035` — against an irrelevant-document floor of
+  about `1.7e-04`. Relevant supporting material sits one order of magnitude
+  above noise and three below a direct answer, so any cutoff that clears the
+  noise also discards it. There is no default cutoff: `--rerank` reorders but
+  never filters until you ask. A literal `--rerank-threshold 0.0` drops
+  nothing, because the scores are strictly positive.
+
+`--rerank` POSTs the pooled records' `text` to the reranker endpoint,
+`--rerank-pool` documents per batch. Without it, only the query string leaves
+the process — a private-scope caller should weigh that before opting in.
 
 **Borrowed credentials are scoped.** `EIDETIC_EMBED_API_KEY` is eidetic's own
 variable — set it and it is sent wherever you point `EIDETIC_EMBED_URL`. The

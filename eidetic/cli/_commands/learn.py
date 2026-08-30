@@ -40,6 +40,24 @@ Commands
                                  20) bound the traversal; --depth 0 gives a
                                  flat, primary-only bundle. --source filters
                                  metadata.source across both tiers.
+                                 --rerank (off by default; accepted with every
+                                 --mode) adds a cross-encoder second pass over
+                                 --rerank-pool (default 50) lifecycle-visible
+                                 hits, before the --top-k slice, so a record
+                                 the mode ranked below k can be rescued — but
+                                 a pool narrower than --top-k shrinks the
+                                 result set. It posts those records' text to
+                                 the reranker endpoint and orders items by
+                                 rerank_score, while `score` keeps its search
+                                 value: re-sorting by `score` disagrees with
+                                 the emitted order. It fails closed (exit 2)
+                                 when the remote reranker stays silent, unless
+                                 --rerank-allow-fallback — so exact/keyword are
+                                 offline-safe only WITHOUT --rerank.
+                                 --rerank-threshold F opts in to dropping hits;
+                                 the reranker is near-binary, so a cutoff also
+                                 removes topically-relevant supporting records,
+                                 not just junk (and 0.0 drops nothing).
   eidetic-cli sweep              Apply lifecycle transitions (shadow/archive).
   eidetic-cli migrate qq         Import legacy QQ memory (files/mongo/neo4j).
   eidetic-cli migrate store      Upgrade store format (Record -> Envelope JSONL).
@@ -106,7 +124,19 @@ def _as_json_payload() -> dict[str, object]:
                     "a bounded links/supersedes traversal), not a bare list. --depth "
                     "(default 1) / --max-nodes (default 20) bound the traversal; --depth 0 "
                     "gives a flat, primary-only bundle. --source filters metadata.source "
-                    "across both tiers."
+                    "across both tiers. --rerank (off by default, accepted with every "
+                    "--mode) adds a cross-encoder second pass over --rerank-pool "
+                    "(default 50) lifecycle-visible hits before the --top-k slice, so a "
+                    "record ranked below k can be rescued — a pool narrower than --top-k "
+                    "shrinks the result set. It posts those records' text to the reranker "
+                    "endpoint and orders items by rerank_score while `score` keeps its "
+                    "search value, so re-sorting by `score` disagrees with the emitted "
+                    "order. It fails closed (exit 2) when the remote reranker stays "
+                    "silent unless --rerank-allow-fallback — so exact/keyword are "
+                    "offline-safe only WITHOUT --rerank. --rerank-threshold F opts in to "
+                    "dropping hits; the reranker is near-binary, so a cutoff also removes "
+                    "topically-relevant supporting records, not just junk (and 0.0 drops "
+                    "nothing)."
                 ),
             },
             {"path": ["sweep"], "summary": "Apply lifecycle transitions (shadow/archive)."},
