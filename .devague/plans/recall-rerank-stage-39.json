@@ -1,0 +1,657 @@
+{
+  "slug": "recall-rerank-stage-39",
+  "title": "recall rerank stage (#39)",
+  "frame_slug": "recall-rerank-stage-39",
+  "schema_version": 4,
+  "status": "exported",
+  "created": "2026-08-30T18:15:14Z",
+  "updated": "2026-08-30T18:19:18Z",
+  "targets": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "eidetic recall gains an opt-in reranker stage: --rerank re-scores the primary hits with the lobes cross-encoder and exposes rerank_score beside score, and the reranker's fallback to lexical overlap is never silent again",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h1",
+      "kind": "honesty",
+      "text": "the whole feature is exercised by hermetic tests with an injected client - no test reaches a live lane - AND at least one live run against the real lobes gateway reproduces the issue table (on-topic records kept, distractor dropped) before the PR merges",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c2",
+      "kind": "requirement",
+      "text": "eidetic/memory/embed.py already ships the whole remote lane: rerank() -> _remote_rerank() POSTs {base_url}/rerank with _rerank_model and parses results[].relevance_score (falling back to results[].score); the change wires an existing method into recall, it does not build a client",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h2",
+      "kind": "honesty",
+      "text": "the shipped rerank()/_remote_rerank() is called as-is: if wiring it requires changing its request or response parsing, that is a separate finding to state, not a silent edit folded into this change",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c3",
+      "kind": "requirement",
+      "text": "the rerank stage lands in eidetic/cli/_commands/recall.py's cmd_recall, between the lifecycle filter and the top-k slice: today the code fetches ALL ranked hits (top_k=2**31), lifecycle-filters, then slices [:top_k], so a rerank pass has a natural candidate pool wider than top-k already in hand",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h3",
+      "kind": "honesty",
+      "text": "the rerank pass is proven to sit AFTER the lifecycle filter: a test shows a shadowed or archived record is never sent to the reranker, so lifecycle filtering is never bypassed by the new stage",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c4",
+      "kind": "requirement",
+      "text": "Record (eidetic/memory/record.py) gains a recall-only rerank_score field alongside score and signal, threaded through to_dict/from_dict, AND added to the set cmd_recall clears on the reinforcement copy (bumped.score = None; bumped.signal = None) so a query-time number is never persisted",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h4",
+      "kind": "honesty",
+      "text": "a round-trip test proves rerank_score never persists: after a --rerank recall, re-reading the reinforced records from the store shows rerank_score absent/None, exactly as score and signal already are",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c5",
+      "kind": "requirement",
+      "text": "recall.py holds no EmbedClient today - StoreBackend.__init__ constructs its own (self._embed = EmbedClient()) and hands it to scoring.rank() inside backend.search(); wiring rerank into the CLI needs a deliberate seam for the client (new backend method, or an EmbedClient built in the handler) rather than reaching into backend._embed",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h5",
+      "kind": "honesty",
+      "text": "the EmbedClient seam is explicit and testable - a test injects a fake client through the seam without monkeypatching backend._embed, proving the handler does not reach into backend internals",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c6",
+      "kind": "requirement",
+      "text": "EmbedClient.rerank() swallows every exception into _local_rerank, and the two lanes return numbers on the same 0..1 scale with entirely different meaning (live lane: 0.968 on-topic vs 3.2e-05 distractor; lexical fallback: 0.034 vs 0.016), so a caller cannot tell a degraded answer from a good one - the degradation must become visible at the call site",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h6",
+      "kind": "honesty",
+      "text": "a test asserts the two lanes are distinguishable at the call site: given a raising remote lane, the caller can tell it got lexical numbers WITHOUT inspecting the score values themselves",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c10",
+      "kind": "boundary",
+      "text": "the rerank stage is OPT-IN and default recall behaviour is byte-unchanged: --mode hybrid without --rerank keeps its current ordering, scores and bundle shape. Issue #3 (jetson-ai-lab-cli) and the research-flow consumers (#1) already absorbed one breaking bundle change in 0.13.0; a second silent reordering of the primary tier is not on the table",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h11",
+      "kind": "honesty",
+      "text": "a golden-output test proves default recall is byte-unchanged: the same query with no --rerank produces an identical bundle (same items, same order, same scores) before and after this change",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c11",
+      "kind": "boundary",
+      "text": "recall stays fetch-only: reranking is scoring a (query, stored-text) pair with a cross-encoder, not generating text. No item text is synthesised, rewritten or summarised anywhere on this path - the fetch-only guarantee stated in recall.py module docs and CLAUDE.md survives verbatim",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h12",
+      "kind": "honesty",
+      "text": "grep proves it structurally: no LLM/completion/chat endpoint is reachable from the recall path, and every emitted item text is byte-identical to the stored record text",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c12",
+      "kind": "boundary",
+      "text": "the freshness blend must not double-apply: scoring._blend_signal already multiplies score by (1 + 0.25*(signal-0.5)) inside rank(), uniformly across all four modes. Whatever rerank_score means, it must not be silently re-blended, and score must not be re-blended a second time after the rerank pass",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h13",
+      "kind": "honesty",
+      "text": "a test pins the blend applies exactly once: a record with real temporal data has the same score under --rerank as without it, proving the rerank pass did not re-run _apply_blend",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c13",
+      "kind": "boundary",
+      "text": "the test suite stays hermetic and offline: tests/test_scoring.py and tests/test_signal_strength.py deliberately construct EmbedClient(base_url=\"http://127.0.0.1:1/v1\") so every ranking test exercises the local fallback with no server. Rerank tests follow that posture - fake/injected clients, never a live lane in CI",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h14",
+      "kind": "honesty",
+      "text": "the full suite passes with no network route to the lobes gateway (run with the endpoint pointed at a dead port), proving no test depends on a live lane",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c14",
+      "kind": "boundary",
+      "text": "docs/contract.md \u00a75 embed_default_* block, tests/test_embed_default_drift.py and BOTH vendored wrappers (.claude/skills/{recall,remember}/scripts/*.sh) are locked together by a drift test. EIDETIC_RERANK_MODEL is already in all three. If the opt-in gains an env var with a wrapper-exported default, all three surfaces move together or CI fails",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h15",
+      "kind": "honesty",
+      "text": "tests/test_embed_default_drift.py still passes unchanged, and if this change adds no env var the test file needs no edit at all - a diff on that file is itself the signal that c14 was triggered",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c18",
+      "kind": "requirement",
+      "text": "the hand-maintained docs trio drifts if any one is missed - CLAUDE.md names it explicitly: eidetic/explain/catalog.py (the _RECALL verbatim doc, ~line 182-333), eidetic/cli/_commands/learn.py (_TEXT + _as_json_payload) and eidetic/cli/_commands/overview.py (_VERBS line 63). README.md line 40 and .claude/skills/recall/SKILL.md + recall.sh usage text carry the same flag list a fourth and fifth time",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h7",
+      "kind": "honesty",
+      "text": "teken cli doctor . --strict stays green and every one of the five flag-listing surfaces (explain catalog _RECALL, learn, overview, README line 40, recall SKILL.md + recall.sh usage) names --rerank - verified by grepping for the flag across all five, not by eyeballing",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c20",
+      "kind": "requirement",
+      "text": "the threshold and the fallback interact and must not be applied blindly: a relevance cutoff calibrated on cross-encoder scores (0.968 vs 3.2e-05) is meaningless against lexical-overlap scores (0.034 vs 0.016, same 0..1 scale). When the explicitly-permitted lexical fallback is in use, the threshold must either be skipped or be a separately-stated lexical cutoff - never the remote one reused",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h8",
+      "kind": "honesty",
+      "text": "a test pins the interaction directly: with the fallback permitted and a raising remote lane, a record scoring below the REMOTE threshold on lexical overlap is NOT dropped - proving the remote cutoff was not reused on a lexical score",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c21",
+      "kind": "requirement",
+      "text": "--rerank without the fallback opt-in FAILS CLOSED: an unreachable or unauthenticated lane raises CliError (exit 1/2 per the error contract, error: + hint: lines, no traceback) rather than answering with lexical numbers. Given the live probe (401 with no bearer token) this is the common misconfiguration, so the remediation line must name the API key variables by name",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h9",
+      "kind": "honesty",
+      "text": "a test asserts the failure is closed and legible: an unreachable/401 lane with no fallback opt-in exits non-zero with an error: line and a hint: line naming EIDETIC_EMBED_API_KEY, and emits no bundle to stdout",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c22",
+      "kind": "requirement",
+      "text": "when - and only when - a caller passes --rerank-threshold, recall can return FEWER than --top-k results, including zero. Every downstream stage keys off the surviving hits: a dropped record is not emitted in any tier, is not used as a traversal seed, and is not reinforced. With the post-challenge default (reorder only, c29) the hit count is unchanged from today",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h10",
+      "kind": "honesty",
+      "text": "a test proves the drop propagates coherently: a record dropped by the threshold appears in no tier of the bundle, is not used as a traversal seed, and its recall_count/last_recall are unchanged in the store afterwards",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c23",
+      "kind": "boundary",
+      "text": "ordering and score deliberately diverge under --rerank: items are ordered by rerank_score while score keeps its hybrid value, so a consumer re-sorting by score disagrees with the emitted order. This is what issue #39 asks for; the docs surfaces (catalog _RECALL, README, SKILL.md) must say so outright rather than leave it inferable",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h16",
+      "kind": "honesty",
+      "text": "a test asserts the divergence explicitly: under --rerank the emitted item order differs from a descending sort on score, and the docs surfaces state this in words a consumer will read before assuming otherwise",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c24",
+      "kind": "audience",
+      "text": "every recall caller who has watched a relevant record sit below an irrelevant one: the jetson-ai-lab-cli consumer (#3) building cited answers, the research-flow agents (#1), the fanned-out /recall skill wrappers used by Claude and the colleague backend, and any agent whose top-k is padded with near-miss records hybrid scored at ~0.23",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h17",
+      "kind": "honesty",
+      "text": "the issue #39 thread records that the named consumers were told - the opt-in flag means none of them must act, but they are told it exists",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c25",
+      "kind": "after_state",
+      "text": "a caller who adds --rerank gets a bundle whose primary tier has been re-scored by the lobes cross-encoder: off-topic records that hybrid surfaced are dropped below the threshold rather than padding top-k, survivors are ordered by rerank_score with their hybrid score still visible beside it, and if the lane is unreachable or unauthenticated the call FAILS with a named remediation instead of quietly answering with lexical-overlap numbers",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h18",
+      "kind": "honesty",
+      "text": "a live run against the real lobes gateway reproduces the after-state end to end: --rerank on a real store drops an injected distractor, keeps the on-topic records, and an unauthenticated run exits non-zero with the remediation line",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c26",
+      "kind": "before_state",
+      "text": "EmbedClient.rerank() ships complete and is called by nothing; recall is embedding+BM25 only, with no rerank flag. Worse, the method is a trap for whoever wires it next: it swallows every exception into a lexical-overlap fallback that returns numbers on the same 0..1 scale, so a 401 from the gateway looks exactly like a working reranker",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h19",
+      "kind": "honesty",
+      "text": "the before-state is verifiable in git history at the parent commit: grep shows rerank( called from nowhere outside embed.py and its tests, and recall has no rerank flag",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c27",
+      "kind": "why_it_matters",
+      "text": "the lane is now calibrated and measurably discriminating - on real eidetic records it kept the two on-topic ones at 0.993/0.936 and sent both off-topic records hybrid had surfaced at ~0.23 to 0.000 - so the recall tail is improvable today with code eidetic already owns. And the silent fallback is a correctness hazard independent of the feature: it is how eidetic#28 shipped an endpoint that always 401ed without anyone noticing for four months",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h20",
+      "kind": "honesty",
+      "text": "the improvement is demonstrated, not asserted: the live run records before/after orderings for at least one real query, and the PR quotes both",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c28",
+      "kind": "success_signal",
+      "text": "an offline, hermetic test proves all three behaviours against an injected client: (1) with a fake remote lane scoring a distractor 0.0, --rerank drops it and reorders the survivors by rerank_score while score keeps its hybrid value; (2) with the lane raising, --rerank exits non-zero with error:/hint: naming the API key variables; (3) with the fallback explicitly permitted, the call succeeds, the payload marks the lexical lane and the remote-calibrated threshold is not applied to lexical scores",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h21",
+      "kind": "honesty",
+      "text": "all three numbered behaviours exist as named, individually-failing tests - not one combined test that passes for the wrong reason - and each is mutation-verified by breaking the code it covers",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c33",
+      "kind": "requirement",
+      "text": "a literal 0.0 threshold drops NOTHING: rerank scores are strictly positive and the issue table\"s \"0.000\" is display rounding. Measured floors: 3.2e-05 for the \"Cats purr\" distractor in a 2-doc pool, but 1.6e-4 to 1.8e-4 for irrelevant docs in a 50-doc pool - the floor MOVES with pool size and composition, so the default must be a real number chosen against a pool of the configured size, not the literal zero the issue table suggests",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h23",
+      "kind": "honesty",
+      "text": "a test asserts a 0.0 threshold is a no-op on strictly-positive scores, so nobody later mistakes it for drop-everything-irrelevant",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c34",
+      "kind": "requirement",
+      "text": "the h4 round-trip test is VACUOUS as written: record_to_envelope (backend.py:264) is an explicit field WHITELIST that omits score and signal by construction, so rerank_score can never persist no matter what cmd_recall nulls. A test that stores and re-reads will pass identically on buggy code. It must use a stand-in that bypasses the whitelist, plus a control assertion that fails when the guard is removed - this is the THIRD occurrence of this trap in this repo (get_many pre-filtering in #37, data_refinery list() can_serve in #23)",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h24",
+      "kind": "honesty",
+      "text": "the rerank_score non-persistence test is mutation-verified: it FAILS when the guard is deliberately removed, proving it is not passing on the envelope whitelist alone",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c35",
+      "kind": "requirement",
+      "text": "the threshold turns _remote_rerank\"s missing-index default into silent data loss: score_map.get(i, 0.0) maps any index the server omits or returns out of range to 0.0. As a ranking input that is benign; combined with --rerank-threshold it becomes a DROP, so a partial or malformed response makes records vanish with no error. A response shorter than the batch must be detected and raised rather than defaulted - this holds whenever the threshold is available, not only when it is on",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h25",
+      "kind": "honesty",
+      "text": "a test feeds a response missing one index and asserts an error is raised, not a 0.0 score substituted",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c36",
+      "kind": "requirement",
+      "text": "a --rerank-threshold that drops primary hits is a SILENT CUT, the exact thing #37 ruled out when it made truncated mandatory for a bound that cuts a walk short. When a caller opts into the threshold, the bundle must report how many primary hits it removed. Under the default (reorder only) nothing is cut and no marker is needed",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h26",
+      "kind": "honesty",
+      "text": "with --rerank-threshold set, a test asserts the bundle reports the number of primary hits removed; without it, the payload is unchanged from today",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c37",
+      "kind": "requirement",
+      "text": "CROSS-REPO COLLISION found by the adjacent-systems lens: colleague/memory.py already ships filter_recall_records(min_score, min_signal) with COLLEAGUE_RECALL_MIN_SCORE, thresholding recalled records on the score field before injection, and score_recall_precision ranks over the recalled ORDER. Under c23 (order by rerank_score, score keeps its hybrid value) colleague would threshold on hybrid scores while reading a rerank order - cutting exactly the records the reranker ranked first. Whatever field carries the authoritative relevance must be stated to that consumer, not left to be inferred",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h27",
+      "kind": "honesty",
+      "text": "the field carrying authoritative relevance is stated explicitly in the bundle docs, and colleague is told on the issue thread that a score-based min_score filter no longer matches rerank order",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "c38",
+      "kind": "boundary",
+      "text": "rerank sends record TEXT to the gateway, so a --visibility private recall ships private record text over HTTP - pre-existing for embeddings (embed_detect already posts candidate texts) but AMPLIFIED here: the pool widens the batch from top-k (5) to 50, roughly a tenfold increase in private text leaving the process per call. This is the same exposure the borrowed-key withholding logic in embed.py already guards against, and it must be stated rather than inherited silently",
+      "deferred": false,
+      "deferred_reason": ""
+    },
+    {
+      "id": "h28",
+      "kind": "honesty",
+      "text": "the docs state that --rerank posts record text to the endpoint and that the pool sets the batch size, so a private-scope caller can see the exposure before opting in",
+      "deferred": false,
+      "deferred_reason": ""
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "summary": "record.py: add the recall-only rerank_score field and prove it cannot persist",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "Record carries rerank_score alongside score/signal, threaded through to_dict and from_dict with a safe .get() default so legacy records load unchanged",
+        "a non-persistence test uses a stand-in that BYPASSES the record_to_envelope whitelist, so it exercises the guard rather than the whitelist",
+        "that test is mutation-verified: it FAILS when the guard is deliberately removed, and the failure is recorded in the PR",
+        "files touched: eidetic/memory/record.py + a new tests/test_record_rerank.py only"
+      ],
+      "deps": [],
+      "covers": [
+        "c4",
+        "h4",
+        "c34",
+        "h24"
+      ],
+      "instruction": "Follow the score/signal pattern exactly: dataclass field, to_dict, from_dict with .get() default. Do NOT touch record_to_envelope - it is a whitelist that already omits query-time fields, which is why the naive round-trip test is vacuous. Your test must bypass that whitelist and must FAIL when you delete the guard; prove it by deleting the guard once and pasting the failure."
+    },
+    {
+      "id": "t2",
+      "summary": "embed.py: make the rerank lane self-reporting and reject short responses",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "rerank gains a detect-style variant returning (scores, online) mirroring embed_detect; the existing rerank() signature keeps working for any current caller",
+        "a test proves the caller can tell the lexical lane from the remote one WITHOUT inspecting score values",
+        "a response missing an index RAISES instead of substituting score_map.get(i, 0.0); a test feeds a short response and asserts the raise",
+        "the shipped _remote_rerank request/response handling is otherwise unchanged; any required change is reported as a separate finding, not folded in silently",
+        "files touched: eidetic/memory/embed.py + a new tests/test_embed_rerank_lane.py only"
+      ],
+      "deps": [],
+      "covers": [
+        "c2",
+        "h2",
+        "c6",
+        "h6",
+        "c35",
+        "h25"
+      ],
+      "instruction": "Mirror embed_detect exactly - it already solves this problem: it returns (vectors, online) and _score_hybrid zeroes alpha when offline. Do not invent a new diagnostics channel. Separately, score_map.get(i, 0.0) must stop defaulting: a response missing an index is a server error, not a zero-relevance document."
+    },
+    {
+      "id": "t3",
+      "summary": "new eidetic/memory/rerank.py: the pure ordering+threshold engine",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a pure module in the style of traverse.py/lifecycle.py: no I/O, no clock, no store import, no network - given records, scores, the lane, and an optional threshold it returns the ordered records plus a dropped count",
+        "with no threshold (the default) it drops nothing and returns every input record reordered",
+        "a 0.0 threshold is a proven no-op on strictly-positive scores, with a test naming why so nobody later reads it as drop-everything-irrelevant",
+        "when the lane is lexical, the remote-calibrated threshold is NOT applied; a test gives a record that a remote cutoff would drop and asserts it survives",
+        "the dropped count is returned as data so the caller can report it; the engine never prints",
+        "files touched: a new eidetic/memory/rerank.py + a new tests/test_rerank_engine.py only"
+      ],
+      "deps": [],
+      "covers": [
+        "c33",
+        "h23",
+        "c36",
+        "h26",
+        "c22",
+        "h10",
+        "c20",
+        "h8"
+      ],
+      "instruction": "This is a pure engine in the style of eidetic/memory/traverse.py and lifecycle.py - read one of them first for the house shape. No imports of store, backend, embed, or datetime. It receives already-computed scores and returns ordered records plus a dropped count. The two subtle cases are the whole point of the task: a 0.0 threshold must be a no-op on strictly-positive scores, and a remote-calibrated threshold must never be applied to lexical-lane scores."
+    },
+    {
+      "id": "t4",
+      "summary": "backend.py: expose an explicit EmbedClient seam for the CLI",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "cmd_recall can obtain an EmbedClient through a named, documented seam without touching backend._embed",
+        "a test injects a fake client through that seam with no monkeypatching of private attributes",
+        "files touched: eidetic/memory/backend.py + a new tests/test_backend_embed_seam.py only"
+      ],
+      "deps": [],
+      "covers": [
+        "c5",
+        "h5"
+      ],
+      "instruction": "Small task: add a named seam, not a refactor. StoreBackend builds its own EmbedClient in __init__; expose it (or a factory) so cmd_recall can inject a fake without monkeypatching a private attribute. Do not change search() or rank() behaviour."
+    },
+    {
+      "id": "t5",
+      "summary": "recall.py: wire the rerank stage behind --rerank, fail closed by default",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "the pipeline order is rerank(pool) -> threshold -> slice to top-k, inserted between _filter_lifecycle and the [:top_k] slice; a test proves a shadowed/archived record is never sent to the reranker",
+        "--rerank, --rerank-pool (default 50) and --rerank-threshold (no default) are registered; --rerank is accepted with EVERY --mode including exact and keyword",
+        "items are ordered by rerank_score while score keeps its hybrid value; a test asserts the emitted order differs from a descending sort on score",
+        "an unreachable or 401 lane with no fallback opt-in exits non-zero with an error: line and a hint: line naming EIDETIC_EMBED_API_KEY, emits no bundle to stdout, and prints no traceback and no resolved key VALUE",
+        "with the fallback explicitly permitted the call succeeds, the payload marks the lexical lane, and a once-per-process stderr warning fires",
+        "a golden-output test proves default recall (no --rerank) yields a byte-identical bundle to the pre-change build",
+        "a temporal record scores identically under --rerank as without it, proving _apply_blend did not re-run",
+        "grep proves no completion/chat endpoint is reachable from the recall path and every emitted item text is byte-identical to the stored text",
+        "files touched: eidetic/cli/_commands/recall.py + a new tests/test_recall_rerank.py only"
+      ],
+      "deps": [
+        "t1",
+        "t2",
+        "t3",
+        "t4"
+      ],
+      "covers": [
+        "c3",
+        "h3",
+        "c21",
+        "h9",
+        "c10",
+        "h11",
+        "c12",
+        "h13",
+        "c11",
+        "h12"
+      ],
+      "instruction": "The integration task - depends on all of wave 1. Order is load-bearing: _filter_lifecycle -> rerank(pool) -> threshold -> [:top_k]. Reranking after the slice would make the stage unable to rescue anything, and reranking before the lifecycle filter would send shadowed records to the lane. Default recall (no --rerank) must be byte-identical to today: write the golden-output test FIRST and keep it green throughout. The error path must name key VARIABLES, never interpolate a resolved key value."
+    },
+    {
+      "id": "t6",
+      "summary": "docs: name --rerank on every flag-listing surface and state the exposures",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "all five surfaces name the flags: explain/catalog.py _RECALL, learn.py _TEXT and _as_json_payload, overview.py _VERBS, README.md, and .claude/skills/recall/{SKILL.md,scripts/recall.sh} usage text - verified by grepping for --rerank across all five, not by eyeballing",
+        "the docs state outright that under --rerank the item order no longer matches a descending sort on score",
+        "the docs state that --rerank posts record TEXT to the endpoint and that --rerank-pool sets the batch size, so a private-scope caller sees the exposure before opting in",
+        "the offline-safe wording for exact/keyword is corrected to offline-safe WITHOUT --rerank",
+        "the near-binary behaviour is stated where --rerank-threshold is documented: a cutoff also removes topically-relevant supporting records",
+        "teken cli doctor . --strict stays green and markdownlint passes",
+        "no wrapper CODE changes - recall.sh forwards flags verbatim; only its usage text moves"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c18",
+        "h7",
+        "c23",
+        "h16",
+        "c38",
+        "h28"
+      ],
+      "instruction": "Docs only - no behaviour. Five surfaces, all listed in CLAUDE.md as the trio that drifts when one is forgotten, plus README and the vendored skill. Grep for --rerank across all five as your own check. Two corrections are easy to miss: exact/keyword are offline-safe only WITHOUT --rerank, and a threshold removes topically-relevant supporting records because the lane is near-binary (measured: 0.0048 for an on-topic record)."
+    },
+    {
+      "id": "t7",
+      "summary": "drift lock, consumer notice, and version bump",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "tests/test_embed_default_drift.py passes UNCHANGED - a diff on that file is itself the signal that the flag-only decision was violated, and the PR states that it is unmodified",
+        "the bundle docs state explicitly which field carries authoritative relevance under --rerank",
+        "colleague is told on the issue thread that a score-based min_score filter (COLLEAGUE_RECALL_MIN_SCORE in colleague/memory.py filter_recall_records) no longer matches rerank order, and that score_recall_precision ranks over an order that no longer follows score",
+        "the issue #39 thread records that the named consumers - jetson-ai-lab-cli (#3), the research-flow agents (#1), and the fanned-out wrapper repos - were told the flag exists, none of them being required to act",
+        "the version is bumped via the version-bump skill with a CHANGELOG entry, so the version-check CI job passes"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c14",
+        "h15",
+        "c37",
+        "h27",
+        "c24",
+        "h17"
+      ],
+      "instruction": "Three separate things, none of them code in eidetic/: (1) confirm test_embed_default_drift.py is untouched - if you needed to edit it, the flag-only decision was violated and you must stop and report that; (2) post the colleague notice about filter_recall_records/COLLEAGUE_RECALL_MIN_SCORE reading `score` while order now follows rerank_score; (3) run the version-bump skill."
+    },
+    {
+      "id": "t8",
+      "summary": "prove the offline posture, the before-state, and the three success-signal behaviours",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "the full suite passes with NO network route to the gateway (endpoint pointed at a dead port), proving no test depends on a live lane",
+        "the before-state is recorded from the parent commit: rerank( is called from nowhere outside embed.py and its tests, and recall has no rerank flag",
+        "the three success-signal behaviours exist as three separately-named, individually-failing tests - not one combined test that can pass for the wrong reason",
+        "each of the three is mutation-verified by breaking the code it covers, and the failures are recorded in the PR"
+      ],
+      "deps": [
+        "t5"
+      ],
+      "covers": [
+        "c13",
+        "h14",
+        "c26",
+        "h19",
+        "c28",
+        "h21"
+      ],
+      "instruction": "Verification, not features. Run the suite with the endpoint pointed at a dead port to prove hermeticity. The three success-signal behaviours must be three separately-named tests that each fail on their own - a single combined test can pass for the wrong reason, which is the failure mode this criterion exists to prevent. Mutation-verify each and paste the failures."
+    },
+    {
+      "id": "t9",
+      "summary": "live verification against the real lobes gateway",
+      "origin": "llm",
+      "status": "confirmed",
+      "acceptance_criteria": [
+        "a live run on a real store reproduces the after-state: --rerank reorders so an injected distractor ranks last, and with --rerank-threshold it is dropped while the on-topic records survive",
+        "an unauthenticated live run exits non-zero with the remediation line naming the key variable",
+        "the near-binary finding is reproduced and quoted in the PR: at least one topically-relevant record scores in the 1e-3..1e-2 band while a direct answer scores >0.99",
+        "before/after orderings for at least one real query are recorded in the PR, so the improvement is demonstrated rather than asserted",
+        "no test added by this task runs against the live lane - the live run is manual evidence, the suite stays hermetic"
+      ],
+      "deps": [
+        "t5",
+        "t6"
+      ],
+      "covers": [
+        "c1",
+        "h1",
+        "c25",
+        "h18",
+        "c27",
+        "h20"
+      ],
+      "instruction": "Manual evidence against the real gateway at http://localhost:8001/v1 with the bearer token - add NO tests that touch the live lane. Reproduce the near-binary finding (a topically-relevant record in the 1e-3..1e-2 band while a direct answer scores >0.99) and record before/after orderings for a real query so the PR demonstrates the improvement rather than asserting it."
+    }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "text": "the other ~57 fanned-out consumers of recall output were never surveyed for the same score-thresholding collision colleague has (frame s23). If another one filters or re-sorts on score, --rerank ordering silently misleads it too - and this plan will not find that out",
+      "kind": "unknown_nonblocking",
+      "task_id": "t7",
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r2",
+      "text": "no eidetic-side evaluation set exists: every quality claim about --rerank rests on ad-hoc probes run by hand against two queries. t9 demonstrates the feature works, NOT that it improves recall across the real corpus - and nothing in this plan measures that",
+      "kind": "unknown_nonblocking",
+      "task_id": "t9",
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r3",
+      "text": "a caller who passes --rerank-threshold on an untemplated host (Thor/Orin, until their next `lobes init --apply`) can still lose relevant records, and eidetic cannot detect templated-vs-untemplated from the response shape. Mitigated to non-blocking only because thresholding is off by default",
+      "kind": "unknown_nonblocking",
+      "task_id": "t6",
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r4",
+      "text": "rerank latency was measured on an idle fleet (0.07s for 50 docs). Behaviour under concurrent load from other mesh agents is unmeasured, and recall sits on the hot path for agent context",
+      "kind": "unknown_nonblocking",
+      "task_id": "t9",
+      "resolved": false,
+      "resolution": ""
+    },
+    {
+      "id": "r5",
+      "text": "wave 3 tasks t6/t7/t8 are formally parallel but all land in the same PR branch as t5 recall.py work; t8 in particular edits the test file t5 creates. Sequencing is safe by wave, but a merge must re-run the full suite after every wave, not only at the end",
+      "kind": "follow_up",
+      "task_id": null,
+      "resolved": false,
+      "resolution": ""
+    }
+  ]
+}

@@ -221,10 +221,12 @@ header, keeping the two tiers visually distinguishable.
 ## Search modes (`--mode`, default `hybrid`)
 
 - `exact` — case-insensitive verbatim substring match (`--case-sensitive`
-  tightens it). Pure lexical; works with the embed server offline.
+  tightens it). Pure lexical; works with the embed server offline — but
+  **only without `--rerank`** (see below: `--rerank` makes every mode depend
+  on the remote lane).
 - `approximate` — vector cosine (semantic) similarity. Needs the embed server.
 - `keyword` — BM25 lexical scoring; only records sharing a query term match.
-  Works offline.
+  Works offline on the same terms as `exact` — **only without `--rerank`**.
 - `hybrid` — weighted alpha blend of min-max-normalised `approximate` +
   `keyword`: `score = alpha*approximate + (1-alpha)*keyword`. When the embed
   server is unreachable, `alpha` collapses to 0 (keyword-only) so hybrid never
@@ -232,6 +234,77 @@ header, keeping the two tiers visually distinguishable.
 
 Search modes select the **primary** tier only. The traversal tier is not
 ranked by any of these — it is a graph walk, not a search.
+
+## Reranking (`--rerank`, opt-in, off by default)
+
+`--rerank` runs a second pass over the primary tier with the cross-encoder
+reranker. It is accepted with every `--mode`. The stage sits at one specific
+place in the pipeline, and the position is load-bearing:
+
+    backend.search() -> lifecycle filter -> rerank pool -> threshold -> [:top-k]
+
+*After* the lifecycle filter, so a shadowed/archived record is never shipped to
+the reranker; *before* the `--top-k` slice, so the wider `--rerank-pool` can
+**rescue** a record the search mode ranked below k — that rescue is the whole
+reason the pool exists.
+
+**Ordering diverges from `score`.** Under `--rerank`, items are ordered by
+`rerank_score`, while `score` keeps its hybrid/BM25 value and is never
+overwritten — the bundle carries both judgements. A consumer that re-sorts
+`items` by `score` therefore gets a **different order than the one emitted**.
+Keep the emitted order, or sort by `rerank_score`, whenever `--rerank` ran.
+
+`rerank_score` is present on EVERY item, including on a default recall that
+never ran the stage — it is `null` there, exactly as `score` and `signal` are
+`null` when they have not been computed. The item schema is therefore constant
+across invocations rather than varying with the flags. This is the one key the
+rerank stage adds to default recall output; nothing else about the default
+bundle changed, and the payload gains its `rerank` block only when `--rerank`
+actually ran.
+
+**Every mode becomes network-dependent under `--rerank`.** `exact` and
+`keyword` are offline-safe only *without* it. The stage asks the remote
+cross-encoder, and if that lane does not answer it **fails closed** — a
+`CliError` (exit `2`) naming the credential variables
+(`EIDETIC_EMBED_API_KEY` / `COLLEAGUE_API_KEY` / `CULTURE_VLLM_API_KEY`) —
+rather than serving local lexical-overlap numbers dressed up as cross-encoder
+ones. `--rerank-allow-fallback` is the explicit opt-in to that local lane;
+when it is taken the bundle names the lane, a warning goes to stderr once per
+process, and the (remote-calibrated) `--rerank-threshold` is not applied.
+
+**Exposure.** The stage POSTs the pooled records' `text` to the configured
+reranker endpoint (`EIDETIC_EMBED_URL`), `--rerank-pool` documents per batch.
+A private-scope caller is sending private record text off-process; decide that
+before opting in. Without `--rerank`, only the query string ever leaves the
+process.
+
+When the stage ran, the bundle carries one extra block alongside `items`:
+
+    "rerank": {"lane": "remote" | "local" | null, "dropped": 0}
+
+`lane` names which reranker produced the ordering (`null` when the pool was
+empty and no reranker ran); `dropped` counts what `--rerank-threshold` cut, so
+a relevance cut is reported for the same reason `truncated` reports a bound cut
+— never silently. Each surviving item gains a `rerank_score` field.
+
+### `--rerank-threshold` also removes supporting records
+
+The cross-encoder is **near-binary**, not a smooth relevance ramp, so a cutoff
+does not merely trim junk. Measured against the live lane for the query *"how
+does eidetic recall traverse the links graph"*: the two records that directly
+answer it scored `0.9998` and `0.9963`, while two records that genuinely ARE
+about traversal (the pure traversal engine; the `max_nodes`/`truncated`
+bounds) scored only `0.0048` and `0.0035` — against an irrelevant-document
+floor of about `1.7e-04`. Topically-relevant supporting material sits one
+order of magnitude above noise and three below a direct answer, so any cutoff
+clearing the noise floor discards it too. Reach for `--rerank-threshold` only
+when you want *direct answers only*, and expect the supporting context to go
+with them.
+
+A literal `--rerank-threshold 0.0` drops **nothing**: rerank scores are
+strictly positive (an utterly irrelevant document still scored `3.2e-05`, not
+`0.0`), and a non-positive cutoff resolves away to "no cutoff" before any
+comparison.
 
 ## Flags
 
@@ -255,6 +328,24 @@ ranked by any of these — it is a graph walk, not a search.
   `--depth 0` since opting out is not a cut of a requested walk.
 - `--max-nodes N` — maximum number of traversal-*discovered* records (default:
   `20`); primary hits never count against this budget.
+- `--rerank` — opt in to the cross-encoder second pass over the primary tier
+  (default: off; accepted with every `--mode`). Items are then ordered by
+  `rerank_score`, not `score`. Posts the pooled records' text to the reranker
+  endpoint, and fails closed (exit `2`) if that endpoint does not answer.
+- `--rerank-pool N` — how many lifecycle-visible hits `--rerank` reconsiders
+  (default: `50`), and the batch size of the request sent to the reranker.
+  Deliberately wider than `--top-k`: it is the only place a record the search
+  mode ranked below k can be rescued. Note the other direction too — under
+  `--rerank` only pooled records reach the primary tier, so a pool *smaller*
+  than `--top-k` shrinks the result set. Ignored without `--rerank`.
+- `--rerank-threshold F` — opt in to DROPPING primary hits at or below this
+  rerank score (default: none — `--rerank` reorders but never filters). Read
+  the near-binary caveat above before choosing a value; `0.0` drops nothing.
+  Not applied on the lexical-fallback lane, whose scores it is not calibrated
+  for.
+- `--rerank-allow-fallback` — permit `--rerank` to use the local
+  lexical-overlap lane when the remote reranker does not answer (default: off,
+  i.e. an unanswered remote lane is an error, not a silent downgrade).
 - `--backend` — storage backend to query: `files`, `mongo`, `neo4j`, or `graph`
   (`graph` is an alias for `neo4j`; default: `files`).
 - `--scope` — query scope name (default: `default`).
@@ -304,7 +395,11 @@ you see in this call always reflects state *before* this call's own bump.
 
 - `0` success
 - `1` user-input error (malformed filter, missing query, bad `--mode`/`--alpha`,
-  negative `--depth`/`--max-nodes`, conflicting `--source`/`--filter source=`)
+  negative `--depth`/`--max-nodes`, a `--rerank-pool` below `1`, conflicting
+  `--source`/`--filter source=`)
+- `2` environment error — `--rerank` was asked for and the remote reranker did
+  not answer (rerun with `--rerank-allow-fallback` to accept the local lexical
+  lane instead)
 
 ## Before / after (issue #37)
 

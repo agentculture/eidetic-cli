@@ -26,6 +26,12 @@ class Record:
     scope: Scope
     score: float | None = None
 
+    # Recall-only reranker score (cross-encoder or lexical-overlap).  Set at
+    # query time by the rerank stage (t5); never persisted — the envelope
+    # whitelist in backend.record_to_envelope omits it by construction.
+    # None is the "not yet reranked" sentinel.
+    rerank_score: float | None = None
+
     # -- t1: temporal + lifecycle fields ------------------------------------
 
     # ISO-8601 date/datetime string when the record was created, or the
@@ -99,6 +105,7 @@ class Record:
                 "visibility": self.scope.visibility,
             },
             "score": self.score,
+            "rerank_score": self.rerank_score,
             # t1 fields
             "created": self.created,
             "last_recall": self.last_recall,
@@ -122,6 +129,7 @@ class Record:
             metadata=data["metadata"],
             scope=scope,
             score=data.get("score"),
+            rerank_score=data.get("rerank_score"),
             # t1 fields — use .get() with safe defaults so legacy records load cleanly
             created=data.get("created", DATE_UNKNOWN),
             last_recall=data.get("last_recall"),
