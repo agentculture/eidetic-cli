@@ -221,19 +221,20 @@ def test_ties_preserve_input_order_deterministically() -> None:
 
 def test_length_mismatch_raises_rather_than_zip_truncating_more_records() -> None:
     records = [_rec("a"), _rec("b"), _rec("c")]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="records"):
         apply_rerank(records, [0.9, 0.1], lane=REMOTE_LANE)
 
 
 def test_length_mismatch_raises_rather_than_zip_truncating_more_scores() -> None:
     records = [_rec("a")]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="records"):
         apply_rerank(records, [0.9, 0.1], lane=REMOTE_LANE)
 
 
 def test_unknown_lane_raises() -> None:
-    with pytest.raises(ValueError):
-        apply_rerank([_rec("a")], [0.9], lane="quantum")  # type: ignore[arg-type]
+    records = [_rec("a")]
+    with pytest.raises(ValueError, match="lane"):
+        apply_rerank(records, [0.9], lane="quantum")  # type: ignore[arg-type]
 
 
 def test_input_records_are_not_mutated() -> None:
