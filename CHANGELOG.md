@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-08-30
+
+### Changed
+
+- `rerank_score` is documented as an additive, always-present key: a default recall that never ran the stage emits `"rerank_score": null`, matching how `score` and `signal` already behave, so the item schema stays constant instead of varying with the flags. The 0.14.0 notes described default output as byte-identical, which was wrong at the item level.
+- The default-recall golden test now compares against a baseline captured from the actual pre-stage commit rather than a re-capture of current behaviour. As written it contained `rerank_score` already and so compared the new behaviour against itself — it could not detect an added key, which was the one regression it existed to catch.
+
+### Fixed
+
+- Review follow-ups from PR #42. A record dropped by `--rerank-threshold` could return through a SURVIVING hit's `links`: the traversal admission predicate applied scope/lifecycle/source policy only, so the dropped record was re-emitted in the traversal tier and reinforced, defeating the drop. Dropped ids are now excluded at every hop, and a rejected record is a dead end so the walk never routes through one.
+- `--rerank-threshold nan` (and `inf`/`-inf`) silently dropped the entire pool: NaN slips past the non-positive guard and every `score > nan` comparison is False, so an empty bundle came back looking like a genuine 'nothing was relevant enough' answer. Non-finite thresholds are now rejected as a user error.
+- A malformed remote rerank response bypassed the fail-closed guard: a string or null score crashed the caller's sort with a bare TypeError, and a NaN sorted and thresholded nonsensically while still being reported as the remote lane. Scores are now validated at the boundary, so any bad response degrades exactly as a dead endpoint does.
+
 ## [0.14.0] - 2026-08-30
 
 ### Added

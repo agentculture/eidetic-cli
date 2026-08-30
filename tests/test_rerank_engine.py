@@ -219,12 +219,16 @@ def test_ties_preserve_input_order_deterministically() -> None:
     assert _ids(again) == _ids(first)
 
 
-def test_length_mismatch_raises_rather_than_zip_truncating() -> None:
+def test_length_mismatch_raises_rather_than_zip_truncating_more_records() -> None:
     records = [_rec("a"), _rec("b"), _rec("c")]
     with pytest.raises(ValueError):
         apply_rerank(records, [0.9, 0.1], lane=REMOTE_LANE)
+
+
+def test_length_mismatch_raises_rather_than_zip_truncating_more_scores() -> None:
+    records = [_rec("a")]
     with pytest.raises(ValueError):
-        apply_rerank(records[:1], [0.9, 0.1], lane=REMOTE_LANE)
+        apply_rerank(records, [0.9, 0.1], lane=REMOTE_LANE)
 
 
 def test_unknown_lane_raises() -> None:

@@ -66,7 +66,13 @@ from eidetic.cli._errors import EXIT_ENV_ERROR, EXIT_USER_ERROR, CliError
 from eidetic.cli._output import emit_diagnostic, emit_result
 from eidetic.memory.backend import BACKEND_CHOICES, Backend, get_backend
 from eidetic.memory.record import Record
-from eidetic.memory.rerank import LOCAL_LANE, REMOTE_LANE, RerankLane, apply_rerank
+from eidetic.memory.rerank import (
+    LOCAL_LANE,
+    REMOTE_LANE,
+    RerankLane,
+    apply_rerank,
+    is_usable_threshold,
+)
 from eidetic.memory.scope import Scope, can_serve
 from eidetic.memory.scoring import DECAY, signal_strength
 from eidetic.memory.traverse import TraversalNode, TraversalResult, discover
@@ -282,11 +288,33 @@ def _rerank_stage(
     return result.records, lane, result.dropped
 
 
+def _validate_threshold(threshold: float | None) -> None:
+    """Reject a non-finite ``--rerank-threshold`` as a user error.
+
+    ``float("nan")`` slips past every ``<= 0`` guard, and each ``score > nan``
+    comparison is False — so a NaN cutoff silently drops the ENTIRE pool and
+    returns an empty bundle that reads like a legitimate "nothing was relevant
+    enough" answer. ``inf`` drops everything for the same reason, and ``-inf``
+    keeps everything while claiming a cutoff was applied. None of the three is
+    a meaningful relevance cutoff, so all three are refused up front.
+    """
+    if not is_usable_threshold(threshold):
+        raise CliError(
+            code=EXIT_USER_ERROR,
+            message=f"--rerank-threshold must be a finite number (got {threshold})",
+            remediation=(
+                "pass a real cutoff, e.g. --rerank-threshold 0.5, or omit the flag "
+                "so --rerank only reorders"
+            ),
+        )
+
+
 def _serve_predicate(
     scope: Scope,
     include_shadowed: bool,
     include_archived: bool,
     source: str | None,
+    excluded_ids: frozenset[str] = frozenset(),
 ) -> Callable[[Record], bool]:
     """Build the per-hop admission predicate handed to :func:`discover`.
 
@@ -300,6 +328,14 @@ def _serve_predicate(
     """
 
     def predicate(record: Record) -> bool:
+        if record.id in excluded_ids:
+            # Dropped by --rerank-threshold. Excluded at EVERY hop, not just as
+            # a seed: without this a surviving hit whose `links` name a dropped
+            # record pulls it straight back into the traversal tier and
+            # reinforces it, defeating the drop (spec c22/h10). Like the other
+            # rejections here it is also a dead end, so the walk never routes
+            # THROUGH a dropped record to reach something further out.
+            return False
         if not can_serve(scope, record.scope):
             return False
         if not _lifecycle_visible(record, include_shadowed, include_archived):
@@ -475,19 +511,28 @@ def cmd_recall(args: argparse.Namespace) -> int:
     # guarantees; see the module docstring.
     rerank_lane: RerankLane | None = None
     rerank_dropped = 0
+    rerank_dropped_ids: frozenset[str] = frozenset()
     if getattr(args, "rerank", False):
         pool_size = int(getattr(args, "rerank_pool", DEFAULT_RERANK_POOL))
         _validate_pool(pool_size)
+        threshold = getattr(args, "rerank_threshold", None)
+        _validate_threshold(threshold)
+        pool = visible[:pool_size]
         reranked, rerank_lane, rerank_dropped = _rerank_stage(
             backend,
             args.query,
-            visible[:pool_size],
-            threshold=getattr(args, "rerank_threshold", None),
+            pool,
+            threshold=threshold,
             allow_fallback=bool(getattr(args, "rerank_allow_fallback", False)),
         )
-        # Records the threshold dropped are gone from `visible` entirely: they
-        # cannot be emitted in any tier, cannot seed the traversal, and cannot
-        # be reinforced — all three read from `hits` below.
+        # Records the threshold dropped are gone from `visible`, so they cannot
+        # be emitted in the primary tier, cannot seed the traversal, and cannot
+        # be reinforced. That is NOT sufficient on its own: the traversal can
+        # still FETCH a dropped record through a surviving hit's `links`, which
+        # would re-emit and reinforce it. Their ids are therefore carried into
+        # the admission predicate below so the drop holds at every hop.
+        kept_ids = {record.id for record in reranked}
+        rerank_dropped_ids = frozenset(r.id for r in pool if r.id not in kept_ids)
         visible = reranked
     hits = visible[: args.top_k]
 
@@ -517,7 +562,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
         backend,
         scope,
         hits,
-        _serve_predicate(scope, include_shadowed, include_archived, source),
+        _serve_predicate(scope, include_shadowed, include_archived, source, rerank_dropped_ids),
         depth,
         max_nodes,
     )

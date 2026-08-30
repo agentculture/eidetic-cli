@@ -4,7 +4,7 @@
   "schema_version": 5,
   "status": "exported",
   "created": "2026-08-30T16:54:05Z",
-  "updated": "2026-08-30T18:11:41Z",
+  "updated": "2026-08-30T20:51:29Z",
   "claims": [
     {
       "id": "c1",
@@ -180,7 +180,7 @@
     {
       "id": "c10",
       "kind": "boundary",
-      "text": "the rerank stage is OPT-IN and default recall behaviour is byte-unchanged: --mode hybrid without --rerank keeps its current ordering, scores and bundle shape. Issue #3 (jetson-ai-lab-cli) and the research-flow consumers (#1) already absorbed one breaking bundle change in 0.13.0; a second silent reordering of the primary tier is not on the table",
+      "text": "the rerank stage is OPT-IN and default recall behaviour is unchanged EXCEPT for one additive, documented key: every item gains `rerank_score`, which is null when the stage did not run \u2014 exactly as `score` and `signal` are null before they are computed, so the item schema stays constant across invocations rather than varying with the flags. The payload own keys are untouched (the `rerank` block appears only when the stage ran), ordering and every number on the default path are unchanged. AMENDED after PR #42 review: this claim originally said \"byte-unchanged\", and the golden test asserting it had been captured from the already-changed code, so it compared the new behaviour against itself and could not detect the added key",
       "origin": "llm",
       "status": "confirmed",
       "honesty_conditions": [
@@ -189,12 +189,24 @@
           "text": "a golden-output test proves default recall is byte-unchanged: the same query with no --rerank produces an identical bundle (same items, same order, same scores) before and after this change",
           "status": "confirmed",
           "instruction": ""
+        },
+        {
+          "id": "h30",
+          "text": "the golden test compares against a baseline captured from the actual pre-stage commit (dd33241), NOT a re-capture of current behaviour, and is mutation-verified: adding any further key to the item dict makes it fail",
+          "status": "confirmed",
+          "instruction": ""
         }
       ],
       "hard_questions": [],
       "links": [],
       "instruction": "",
-      "revisions": []
+      "revisions": [
+        {
+          "text": "the rerank stage is OPT-IN and default recall behaviour is byte-unchanged: --mode hybrid without --rerank keeps its current ordering, scores and bundle shape. Issue #3 (jetson-ai-lab-cli) and the research-flow consumers (#1) already absorbed one breaking bundle change in 0.13.0; a second silent reordering of the primary tier is not on the table",
+          "kind": "boundary",
+          "reason": ""
+        }
+      ]
     },
     {
       "id": "c11",

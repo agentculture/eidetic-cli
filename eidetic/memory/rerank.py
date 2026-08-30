@@ -45,6 +45,7 @@ rather than being silently zip-truncated.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Literal, Sequence
 
@@ -154,3 +155,23 @@ def apply_rerank(
         scores=[score for _, score in kept],
         dropped=len(ordered) - len(kept),
     )
+
+
+def is_usable_threshold(threshold: float | None) -> bool:
+    """Return whether *threshold* is a meaningful relevance cutoff.
+
+    ``None`` (no cutoff) is usable. A non-finite value is not, and the reason is
+    that each fails in a different, silent way: ``nan`` makes every
+    ``score > cutoff`` comparison False and so drops the ENTIRE pool while
+    slipping past any ``<= 0`` guard; ``inf`` drops everything for the same
+    reason; ``-inf`` keeps everything while claiming a cutoff was applied. None
+    of the three is a relevance cutoff, so the caller rejects all of them rather
+    than returning an empty bundle that reads like a genuine "nothing was
+    relevant enough" answer.
+
+    This lives beside the threshold rules it belongs to rather than in the CLI:
+    the CLI module is held to a deliberate stdlib import allowlist
+    (tests/test_recall.py::test_bundle_path_makes_no_generative_or_extra_network_call),
+    and `math` is not on it.
+    """
+    return threshold is None or math.isfinite(threshold)

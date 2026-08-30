@@ -254,6 +254,14 @@ overwritten — the bundle carries both judgements. A consumer that re-sorts
 `items` by `score` therefore gets a **different order than the one emitted**.
 Keep the emitted order, or sort by `rerank_score`, whenever `--rerank` ran.
 
+`rerank_score` is present on EVERY item, including on a default recall that
+never ran the stage — it is `null` there, exactly as `score` and `signal` are
+`null` when they have not been computed. The item schema is therefore constant
+across invocations rather than varying with the flags. This is the one key the
+rerank stage adds to default recall output; nothing else about the default
+bundle changed, and the payload gains its `rerank` block only when `--rerank`
+actually ran.
+
 **Every mode becomes network-dependent under `--rerank`.** `exact` and
 `keyword` are offline-safe only *without* it. The stage asks the remote
 cross-encoder, and if that lane does not answer it **fails closed** — a

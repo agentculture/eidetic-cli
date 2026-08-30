@@ -144,9 +144,9 @@ def test_short_response_missing_index_raises(monkeypatch: pytest.MonkeyPatch) ->
     """
     body = {"results": [{"index": 0, "relevance_score": 0.9}]}  # index 1 omitted
     _capture(monkeypatch, body)
-    with pytest.raises(Exception) as excinfo:
-        EmbedClient(base_url="http://gw/v1")._remote_rerank("q", ["doc a", "doc b"])
-    assert "1" in str(excinfo.value)  # names the missing index
+    client = EmbedClient(base_url="http://gw/v1")
+    with pytest.raises(ValueError, match="missing score for index 1"):
+        client._remote_rerank("q", ["doc a", "doc b"])
 
 
 def test_short_response_degrades_to_lexical_lane(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,3 +162,57 @@ def test_short_response_degrades_to_lexical_lane(monkeypatch: pytest.MonkeyPatch
     assert scores == EmbedClient(base_url="http://127.0.0.1:1/v1")._local_rerank(
         "q", ["doc a", "doc b"]
     )
+
+
+# -- malformed scores (PR #42 review) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "bad_score"),
+    [("string", "high"), ("null", None), ("nan", float("nan")), ("inf", float("inf"))],
+)
+def test_unusable_score_raises_at_the_boundary(
+    monkeypatch: pytest.MonkeyPatch, label: str, bad_score: object
+) -> None:
+    """A present-but-unusable score is a server error, like a missing one.
+
+    A string or None crashes the caller's sort with a bare TypeError; a NaN
+    sorts and thresholds nonsensically (every ``score > cutoff`` is False)
+    while still being reported as the remote lane — routing a malformed
+    response straight past the fail-closed guard. All are rejected here, at
+    the boundary, so they degrade exactly as a dead endpoint does.
+    """
+    body = {"results": [{"index": 0, "relevance_score": bad_score}, {"index": 1, "score": 0.9}]}
+    _capture(monkeypatch, body)
+    client = EmbedClient(base_url="http://gw/v1")
+    with pytest.raises(ValueError, match="index 0"):
+        client._remote_rerank("q", ["doc a", "doc b"])
+
+
+@pytest.mark.parametrize("bad_score", ["high", None, float("nan")])
+def test_unusable_score_degrades_to_the_lexical_lane(
+    monkeypatch: pytest.MonkeyPatch, bad_score: object
+) -> None:
+    """Through rerank_detect a malformed score reports online=False.
+
+    That is what makes --rerank fail closed on it rather than serving the
+    numbers as if the cross-encoder had produced them.
+    """
+    body = {"results": [{"index": 0, "relevance_score": bad_score}, {"index": 1, "score": 0.9}]}
+    _capture(monkeypatch, body)
+    scores, online = EmbedClient(base_url="http://gw/v1").rerank_detect("q", ["doc a", "doc b"])
+    assert online is False
+    assert all(isinstance(value, float) for value in scores)
+
+
+def test_a_well_formed_response_is_still_the_remote_lane(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Control: the validation must not reject legitimate responses.
+
+    Without this, the two tests above would also pass if validation rejected
+    everything and the remote lane were simply dead.
+    """
+    body = {"results": [{"index": 0, "relevance_score": 0.97}, {"index": 1, "score": 0.02}]}
+    _capture(monkeypatch, body)
+    scores, online = EmbedClient(base_url="http://gw/v1").rerank_detect("q", ["doc a", "doc b"])
+    assert online is True
+    assert scores == [0.97, 0.02]

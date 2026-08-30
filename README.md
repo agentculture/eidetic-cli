@@ -112,6 +112,11 @@ Three things to know before turning it on:
   with the order that was emitted — keep the emitted order, or sort by
   `rerank_score`. When the stage ran, the bundle also carries
   `"rerank": {"lane": "remote"|"local"|null, "dropped": N}`.
+- **`rerank_score` is on every item, always.** A default recall that never ran
+  the stage emits `"rerank_score": null`, exactly as `score` and `signal` are
+  `null` before they are computed — so the item schema stays constant instead
+  of varying with the flags. This is the one key `--rerank` adds to default
+  output; the payload's own keys are unchanged unless the stage ran.
 - **`exact` and `keyword` are offline-safe only *without* `--rerank`.** The
   stage needs the remote lane, and **fails closed** (exit `2`, naming the
   API-key variables above) when that lane does not answer, rather than passing

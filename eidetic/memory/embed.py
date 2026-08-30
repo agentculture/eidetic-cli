@@ -322,10 +322,26 @@ class EmbedClient:
         # A response that omits an index is a server error, not a
         # zero-relevance document — raise so the caller (rerank_detect)
         # degrades to the lexical lane instead of scoring the missing doc 0.0.
+        #
+        # The same applies to a score that is present but unusable. A string or
+        # None crashes the caller's sort with a bare TypeError, and a NaN sorts
+        # and thresholds nonsensically (every `score > cutoff` is False) while
+        # still being reported as the remote lane — which would route a
+        # malformed response straight past the fail-closed guard. Validate here,
+        # at the boundary, so any bad response degrades the same way a dead
+        # endpoint does.
+        scores: list[float] = []
         for i in range(len(docs)):
             if i not in score_map:
                 raise ValueError(f"rerank response missing score for index {i}")
-        return [score_map[i] for i in range(len(docs))]
+            raw = score_map[i]
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                raise ValueError(f"rerank response score for index {i} is not a number: {raw!r}")
+            value = float(raw)
+            if not math.isfinite(value):
+                raise ValueError(f"rerank response score for index {i} is not finite: {value!r}")
+            scores.append(value)
+        return scores
 
     # -- local fallbacks -----------------------------------------------
 

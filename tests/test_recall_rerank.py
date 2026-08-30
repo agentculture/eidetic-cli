@@ -27,7 +27,7 @@ Determinism: every recall here runs ``--mode keyword`` (BM25, purely local) and
 every seeded record carries the ``DATE_UNKNOWN`` created sentinel with
 ``recall_count == 0``, which makes the freshness signal an exact, stable 0.5
 and bypasses the multiplicative blend entirely. That is what lets
-:func:`test_default_recall_bundle_is_byte_identical_golden` assert a literal
+:func:`test_default_recall_bundle_is_pre_stage_plus_one_additive_key` assert a
 payload rather than a fuzzy shape.
 """
 
@@ -41,6 +41,7 @@ from typing import Any, NamedTuple
 import pytest
 
 from eidetic.cli._commands import recall
+from eidetic.cli._errors import EXIT_USER_ERROR, CliError
 from eidetic.memory.backend import get_backend
 from eidetic.memory.record import DATE_UNKNOWN, Record
 from eidetic.memory.scope import Scope
@@ -183,6 +184,32 @@ _GOLDEN_SEEDS = [
     ("g-three", "unrelated kitchen inventory"),
 ]
 
+# Item keys emitted by the PRE-STAGE code, captured by running commit dd33241
+# (the commit before this work) against the same seeds. This is a real
+# baseline, not a re-capture of current behaviour — see the golden test's
+# docstring for why that distinction cost a review finding.
+_PRE_STAGE_ITEM_KEYS: frozenset[str] = frozenset(
+    {
+        "added_by",
+        "created",
+        "depth",
+        "hash",
+        "id",
+        "last_recall",
+        "lifecycle",
+        "links",
+        "metadata",
+        "recall_count",
+        "scope",
+        "score",
+        "signal",
+        "supersedes",
+        "text",
+        "tier",
+        "type",
+    }
+)
+
 _GOLDEN_PAYLOAD: dict[str, Any] = {
     "query": "wetland",
     "mode": "keyword",
@@ -232,19 +259,42 @@ _GOLDEN_PAYLOAD: dict[str, Any] = {
 }
 
 
-def test_default_recall_bundle_is_byte_identical_golden(
+def test_default_recall_bundle_is_pre_stage_plus_one_additive_key(
     store: _IsolatedStore, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without ``--rerank`` the bundle is EXACTLY what it was before the stage.
+    """Without ``--rerank`` the bundle is the pre-stage bundle plus ONE new key.
 
-    This is the regression fence for the whole task: the rerank stage must add
-    no key, drop no key, reorder nothing, and change no number on the default
-    path. Asserting a literal payload (not a shape) is what makes that binding
-    — the neutral signal and BM25's determinism keep the literal stable.
+    This is the regression fence for the default path: no key may be dropped,
+    nothing reordered, no number changed, and exactly one key added.
+
+    A note on how this test was wrong, because it matters for reading it. It
+    originally asserted ``payload == _GOLDEN_PAYLOAD`` and claimed the bundle
+    was byte-identical — but ``_GOLDEN_PAYLOAD`` had been captured by running
+    the ALREADY-CHANGED code, so it contained ``"rerank_score": None`` and the
+    test compared the new behaviour against itself. It could not detect an
+    added key, which is precisely the regression it was supposed to fence
+    (found in review of PR #42).
+
+    ``_PRE_STAGE_ITEM_KEYS`` below is now captured from the actual pre-stage
+    commit (dd33241), so the comparison has a real baseline. ``rerank_score``
+    is a deliberate, documented addition: it is always present and ``None``
+    when the stage did not run, matching how ``score`` and ``signal`` already
+    behave, so the item schema stays constant across invocations.
     """
     _seed([_record(rid, text) for rid, text in _GOLDEN_SEEDS])
     payload = _run(["wetland", "--mode", "keyword", "--json"], capsys)
     assert payload == _GOLDEN_PAYLOAD
+
+    # The payload's own key set is untouched: no "rerank" block unless the
+    # stage ran.
+    assert sorted(payload) == ["items", "mode", "query", "truncated"]
+
+    # Every item is the pre-stage item plus exactly `rerank_score`, and that
+    # value is None because the stage did not run.
+    for item in payload["items"]:
+        assert set(item) - _PRE_STAGE_ITEM_KEYS == {"rerank_score"}
+        assert _PRE_STAGE_ITEM_KEYS - set(item) == set()
+        assert item["rerank_score"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -798,3 +848,90 @@ def test_rerank_tests_never_touch_the_real_stores(
     assert _fingerprint(_REAL_REPO_STORE) == before_repo
     assert not (store.home / ".eidetic").exists()
     assert store.data_dir.exists(), "the sandbox store is where the writes went"
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups (PR #42): the threshold guarantee, and non-finite inputs
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_dropped_record_cannot_return_through_a_survivors_link(
+    store: _IsolatedStore, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped record stays dropped even when a SURVIVING hit links to it.
+
+    The sibling test above covers links *from* the dropped record. This covers
+    the other direction, which is the one that leaked: the traversal admission
+    predicate applied scope/lifecycle/source policy only, so a survivor whose
+    ``links`` named a threshold-dropped record pulled it straight back in as a
+    traversal item — and reinforced it — defeating the drop entirely.
+
+    Spec c22/h10: a dropped record appears in NO tier and is NOT reinforced.
+    """
+    survivor = _record("rf-survivor", "alpha survivor text", links=["rf-victim"])
+    victim = _record("rf-victim", "alpha victim text")
+    embed = FakeEmbed({"alpha survivor text": 0.9, "alpha victim text": 0.01})
+    _seed([survivor, victim], embed)
+
+    payload = _run(
+        ["alpha", "--mode", "keyword", "--rerank", "--rerank-threshold", "0.5", "--json"],
+        capsys,
+        embed,
+        monkeypatch,
+    )
+
+    assert payload["rerank"]["dropped"] == 1
+    ids = [item["id"] for item in payload["items"]]
+    assert "rf-victim" not in ids, "a threshold-dropped record must not reappear in any tier"
+    assert ids == ["rf-survivor"]
+
+    # ...and it must not have been reinforced by this call.
+    backend = get_backend("files", embed_client=embed)
+    stored = backend.get_many(["rf-victim"], _PUBLIC)["rf-victim"]
+    assert stored.recall_count == 0
+    assert stored.last_recall is None
+
+
+def test_a_survivors_link_to_a_kept_record_still_traverses(
+    store: _IsolatedStore, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for the test above: the exclusion is scoped to DROPPED ids only.
+
+    Without this, the sibling test would also pass if the fix simply switched
+    traversal off whenever a threshold was in force.
+    """
+    survivor = _record("rf-keep-a", "alpha survivor text", links=["rf-keep-b"])
+    neighbour = _record("rf-keep-b", "beta neighbour text")
+    embed = FakeEmbed({"alpha survivor text": 0.9, "beta neighbour text": 0.8})
+    _seed([survivor, neighbour], embed)
+
+    payload = _run(
+        ["alpha", "--mode", "keyword", "--rerank", "--rerank-threshold", "0.5", "--json"],
+        capsys,
+        embed,
+        monkeypatch,
+    )
+
+    assert payload["rerank"]["dropped"] == 0
+    tiers = {item["id"]: item["tier"] for item in payload["items"]}
+    assert tiers == {"rf-keep-a": "primary", "rf-keep-b": "traversal"}
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
+def test_non_finite_rerank_threshold_is_a_user_error(
+    store: _IsolatedStore, capsys: pytest.CaptureFixture[str], bad: str
+) -> None:
+    """``--rerank-threshold nan`` must be refused, not silently drop everything.
+
+    ``float("nan")`` slips past the non-positive check, and every ``score > nan``
+    comparison is False — so the whole pool was dropped and an empty bundle came
+    back looking like a legitimate "nothing was relevant enough" answer.
+    """
+    _seed([_record("nf-one", "alpha one")])
+    args = _parser().parse_args(
+        ["recall", "alpha", "--mode", "keyword", "--rerank", f"--rerank-threshold={bad}", "--json"]
+    )
+    with pytest.raises(CliError) as excinfo:
+        args.func(args)
+    assert excinfo.value.code == EXIT_USER_ERROR
+    assert "finite" in str(excinfo.value.message).lower()

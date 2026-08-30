@@ -60,6 +60,7 @@
 
 - the whole feature is exercised by hermetic tests with an injected client - no test reaches a live lane - AND at least one live run against the real lobes gateway reproduces the issue table (on-topic records kept, distractor dropped) before the PR merges
 - a golden-output test proves default recall is byte-unchanged: the same query with no --rerank produces an identical bundle (same items, same order, same scores) before and after this change
+- the golden test compares against a baseline captured from the actual pre-stage commit (dd33241), NOT a re-capture of current behaviour, and is mutation-verified: adding any further key to the item dict makes it fail
 - grep proves it structurally: no LLM/completion/chat endpoint is reachable from the recall path, and every emitted item text is byte-identical to the stored record text
 - a test pins the blend applies exactly once: a record with real temporal data has the same score under --rerank as without it, proving the rerank pass did not re-run `_apply_blend`
 - the full suite passes with no network route to the lobes gateway (run with the endpoint pointed at a dead port), proving no test depends on a live lane
@@ -80,7 +81,7 @@
 
 ## Scope / boundaries
 
-- the rerank stage is OPT-IN and default recall behaviour is byte-unchanged: --mode hybrid without --rerank keeps its current ordering, scores and bundle shape. Issue #3 (jetson-ai-lab-cli) and the research-flow consumers (#1) already absorbed one breaking bundle change in 0.13.0; a second silent reordering of the primary tier is not on the table
+- the rerank stage is OPT-IN and default recall behaviour is unchanged EXCEPT for one additive, documented key: every item gains `rerank_score`, which is null when the stage did not run — exactly as `score` and `signal` are null before they are computed, so the item schema stays constant across invocations rather than varying with the flags. The payload own keys are untouched (the `rerank` block appears only when the stage ran), ordering and every number on the default path are unchanged. AMENDED after PR #42 review: this claim originally said "byte-unchanged", and the golden test asserting it had been captured from the already-changed code, so it compared the new behaviour against itself and could not detect the added key
 - recall stays fetch-only: reranking is scoring a (query, stored-text) pair with a cross-encoder, not generating text. No item text is synthesised, rewritten or summarised anywhere on this path - the fetch-only guarantee stated in recall.py module docs and CLAUDE.md survives verbatim
 - the freshness blend must not double-apply: scoring.`_blend_signal` already multiplies score by (1 + 0.25\*(signal-0.5)) inside rank(), uniformly across all four modes. Whatever `rerank_score` means, it must not be silently re-blended, and score must not be re-blended a second time after the rerank pass
 - the test suite stays hermetic and offline: tests/`test_scoring.py` and tests/`test_signal_strength.py` deliberately construct EmbedClient(`base_url`="<http://127.0.0.1:1/v1>") so every ranking test exercises the local fallback with no server. Rerank tests follow that posture - fake/injected clients, never a live lane in CI
