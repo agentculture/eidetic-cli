@@ -20,6 +20,27 @@ and the only network call remains the embeddings endpoint the ranking modes
 already use. The verb takes no caller-supplied content and persists nothing but
 its own reinforcement bumps.
 
+``--rerank`` adds an OPT-IN second pass over the primary tier. The stage sits at
+one specific place in the pipeline and the position is load-bearing::
+
+    backend.search()  ->  lifecycle filter  ->  rerank pool  ->  threshold  ->  [:top_k]
+
+*After* the lifecycle filter, so a shadowed/archived record is never shipped to
+the reranker; *before* the ``--top-k`` slice, so the wider ``--rerank-pool``
+(default 50) can RESCUE a record the search mode ranked below k — which is the
+whole reason the pool exists. Reordering is by the reranker's score, published
+on each item as ``rerank_score``; the hybrid/BM25 ``score`` keeps its value and
+is never overwritten, so a consumer can see both judgements.
+
+The stage FAILS CLOSED. ``--rerank`` asks for the remote cross-encoder; if that
+lane does not answer, the offline lexical-overlap fallback produces numbers on a
+completely different distribution, and silently serving those as "reranked"
+would be a lie. So an unanswered remote lane raises :class:`CliError` unless the
+caller explicitly opts in with ``--rerank-allow-fallback``, and when the
+fallback IS taken the bundle names the lane it used, a once-per-process warning
+goes to stderr, and the (remote-calibrated) ``--rerank-threshold`` is not
+applied to lexical scores.
+
 Bounds are the caller's to state: ``--depth`` (default 1) bounds hop distance and
 ``--max-nodes`` (default 20) bounds discovered nodes. Either bound cutting the
 walk short sets ``truncated`` — never a silent cut. ``--depth 0`` skips the walk
@@ -41,10 +62,11 @@ import copy
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from eidetic.cli._errors import EXIT_USER_ERROR, CliError
-from eidetic.cli._output import emit_result
+from eidetic.cli._errors import EXIT_ENV_ERROR, EXIT_USER_ERROR, CliError
+from eidetic.cli._output import emit_diagnostic, emit_result
 from eidetic.memory.backend import BACKEND_CHOICES, Backend, get_backend
 from eidetic.memory.record import Record
+from eidetic.memory.rerank import LOCAL_LANE, REMOTE_LANE, RerankLane, apply_rerank
 from eidetic.memory.scope import Scope, can_serve
 from eidetic.memory.scoring import DECAY, signal_strength
 from eidetic.memory.traverse import TraversalNode, TraversalResult, discover
@@ -53,9 +75,33 @@ from eidetic.memory.traverse import TraversalNode, TraversalResult, discover
 DEFAULT_DEPTH = 1
 DEFAULT_MAX_NODES = 20
 
+# How many lifecycle-visible hits the rerank stage reconsiders. Deliberately
+# much wider than the default --top-k of 5: the pool is the only place a record
+# the search mode ranked below k can be rescued, so a pool no wider than k would
+# make the stage a pure reshuffle of an already-decided answer.
+DEFAULT_RERANK_POOL = 50
+
 # Bundle tier labels.
 TIER_PRIMARY = "primary"
 TIER_TRAVERSAL = "traversal"
+
+# The environment VARIABLES the embed/rerank client reads a bearer token from,
+# in the order it checks them. Named in the fail-closed remediation because a
+# 401 from a missing token is the likeliest reason the remote lane went quiet.
+# These are variable NAMES only — a resolved key VALUE must never reach an
+# error message, a log line, or the payload. Kept in step with
+# ``eidetic.memory.embed``; tests/test_recall_rerank.py pins the two together.
+RERANK_KEY_VARS: tuple[str, ...] = (
+    "EIDETIC_EMBED_API_KEY",
+    "COLLEAGUE_API_KEY",
+    "CULTURE_VLLM_API_KEY",
+)
+
+# Emitted at most once per process, mirroring the withheld-key warning in
+# eidetic.memory.embed: a lexical-lane rerank is a real degradation, so it is
+# never silent — but repeating it per call would drown a batch consumer's
+# stderr.
+_warned_rerank_fallback = False
 
 
 def _parse_filters(raw: list[str] | None) -> dict[str, str] | None:
@@ -118,6 +164,21 @@ def _validate_bounds(depth: int, max_nodes: int) -> None:
         )
 
 
+def _validate_pool(pool: int) -> None:
+    """Reject a non-positive rerank pool with a structured user error.
+
+    A zero/negative pool would silently empty the primary tier rather than
+    "rerank nothing", so it is a caller mistake, not a documented escape hatch —
+    the way to skip the stage is to omit ``--rerank``.
+    """
+    if pool < 1:
+        raise CliError(
+            code=EXIT_USER_ERROR,
+            message=f"--rerank-pool must be >= 1 (got {pool})",
+            remediation="omit --rerank to skip the rerank stage, or pass a positive pool size",
+        )
+
+
 def _lifecycle_visible(record: Record, include_shadowed: bool, include_archived: bool) -> bool:
     """Return True when *record*'s lifecycle state is visible under these flags."""
     lc = getattr(record, "lifecycle", "active")
@@ -135,6 +196,90 @@ def _filter_lifecycle(
 ) -> list:
     """Remove shadowed/archived records unless the corresponding flag is set."""
     return [hit for hit in hits if _lifecycle_visible(hit, include_shadowed, include_archived)]
+
+
+def _warn_rerank_fallback() -> None:
+    """Warn once per process that the LEXICAL rerank lane produced the scores."""
+    global _warned_rerank_fallback
+    if _warned_rerank_fallback:
+        return
+    _warned_rerank_fallback = True
+    emit_diagnostic(
+        "warning: the remote reranker did not answer; --rerank-allow-fallback "
+        "permitted the local lexical-overlap lane, whose scores are NOT "
+        "comparable to cross-encoder scores (--rerank-threshold is skipped on "
+        "this lane).\n"
+        f"hint: check the reranker endpoint and the bearer token in "
+        f"{' / '.join(RERANK_KEY_VARS)}, then rerun without "
+        f"--rerank-allow-fallback to require the remote lane."
+    )
+
+
+def _rerank_unavailable_error() -> CliError:
+    """Build the fail-closed error for a remote rerank lane that did not answer.
+
+    The remediation names the credential VARIABLES only. It must never
+    interpolate a resolved key value: this message reaches stderr, agent logs,
+    and CI output, and a leaked bearer token there is unrecoverable.
+    """
+    return CliError(
+        code=EXIT_ENV_ERROR,
+        message=(
+            "--rerank requested but the remote reranker did not answer; "
+            "refusing to serve local lexical-overlap scores as reranked results"
+        ),
+        remediation=(
+            "check that the reranker endpoint is reachable and that a bearer token is set "
+            f"in one of {', '.join(RERANK_KEY_VARS)} (a 401 from a missing token is the "
+            "usual cause; EIDETIC_EMBED_URL points the client). To accept the local "
+            "lexical lane instead, rerun with --rerank-allow-fallback."
+        ),
+    )
+
+
+def _rerank_stage(
+    backend: Backend,
+    query: str,
+    pool: list[Record],
+    *,
+    threshold: float | None,
+    allow_fallback: bool,
+) -> tuple[list[Record], RerankLane | None, int]:
+    """Rerank *pool* and return ``(records, lane, dropped)``.
+
+    *pool* is the already-lifecycle-filtered, not-yet-top-k-sliced candidate
+    list — see the module docstring for why that exact position matters. The
+    reranker is reached through the backend's named ``embed_client`` seam, never
+    the private ``_embed`` attribute.
+
+    Fail-closed: when the remote lane did not answer and *allow_fallback* is
+    False, this raises rather than returning lexical numbers dressed up as
+    cross-encoder ones. An empty pool short-circuits without contacting the
+    reranker at all — there is nothing to score, and a call with zero documents
+    would be an unanswerable probe rather than evidence about the lane, so the
+    returned lane is ``None``.
+
+    Each surviving record gets its ``rerank_score`` set; ``score`` keeps its
+    search-mode value and is never overwritten, so the bundle carries both
+    judgements.
+    """
+    if not pool:
+        return [], None, 0
+
+    scores, online = backend.embed_client.rerank_detect(query, [record.text for record in pool])
+    if not online:
+        if not allow_fallback:
+            raise _rerank_unavailable_error()
+        _warn_rerank_fallback()
+    lane: RerankLane = REMOTE_LANE if online else LOCAL_LANE
+
+    # `threshold` is calibrated against the remote distribution; the engine
+    # itself refuses to apply it on the local lane (we pass no
+    # `lexical_threshold`, so the fallback lane drops nothing).
+    result = apply_rerank(pool, scores, lane=lane, threshold=threshold)
+    for record, score in zip(result.records, result.scores):
+        record.rerank_score = score
+    return result.records, lane, result.dropped
 
 
 def _serve_predicate(
@@ -270,14 +415,20 @@ def _render_text(payload: dict[str, Any]) -> str:
         f"query: {payload['query']}  mode: {payload['mode']}  "
         f"truncated: {'yes' if payload['truncated'] else 'no'}"
     )
+    rerank = payload.get("rerank")
+    if rerank is not None:
+        header += f"  rerank: {rerank['lane'] or 'none'} (dropped: {rerank['dropped']})"
     blocks: list[str] = []
     for item in payload["items"]:
         score = item["score"]
+        rerank_score = item.get("rerank_score")
         lines = [
             f"[{item['tier']} depth={item['depth']}] id: {item['id']}",
             f"score: {score:.4f}" if isinstance(score, (int, float)) else "score: n/a",
-            f"text: {item['text']}",
         ]
+        if isinstance(rerank_score, (int, float)):
+            lines.append(f"rerank_score: {rerank_score:.4f}")
+        lines.append(f"text: {item['text']}")
         lines.extend(f"  {k}: {v}" for k, v in item["metadata"].items())
         blocks.append("\n".join(lines))
     return header + "\n\n" + ("\n\n".join(blocks) if blocks else "(no results)")
@@ -316,6 +467,28 @@ def cmd_recall(args: argparse.Namespace) -> int:
 
     # Apply lifecycle filter BEFORE top-k truncation.
     visible = _filter_lifecycle(all_hits, include_shadowed, include_archived)
+
+    # The rerank stage sits HERE — after the lifecycle filter (so a shadowed or
+    # archived record is never sent to the reranker) and before the top-k slice
+    # (so the wider pool can promote a record the search mode ranked below k).
+    # Moving it either side of those two neighbours breaks one of those
+    # guarantees; see the module docstring.
+    rerank_lane: RerankLane | None = None
+    rerank_dropped = 0
+    if getattr(args, "rerank", False):
+        pool_size = int(getattr(args, "rerank_pool", DEFAULT_RERANK_POOL))
+        _validate_pool(pool_size)
+        reranked, rerank_lane, rerank_dropped = _rerank_stage(
+            backend,
+            args.query,
+            visible[:pool_size],
+            threshold=getattr(args, "rerank_threshold", None),
+            allow_fallback=bool(getattr(args, "rerank_allow_fallback", False)),
+        )
+        # Records the threshold dropped are gone from `visible` entirely: they
+        # cannot be emitted in any tier, cannot seed the traversal, and cannot
+        # be reinforced — all three read from `hits` below.
+        visible = reranked
     hits = visible[: args.top_k]
 
     # Provenance check: every hit must carry a numeric score.
@@ -360,6 +533,16 @@ def cmd_recall(args: argparse.Namespace) -> int:
         "truncated": traversal.truncated,
         "items": items,
     }
+    if getattr(args, "rerank", False):
+        # Present ONLY when the stage ran, so a default recall's payload keeps
+        # exactly the keys it has always had. `lane` names which reranker
+        # produced the ordering — a consumer must be able to tell a
+        # cross-encoder ordering from a lexical-fallback one, since the two
+        # score distributions mean different things. `dropped` reports a
+        # relevance cut for the same reason `truncated` reports a bound cut
+        # (issue #37): a cut is never silent. `lane` is null when the pool was
+        # empty and no reranker ran.
+        payload["rerank"] = {"lane": rerank_lane, "dropped": rerank_dropped}
     emit_result(
         payload if getattr(args, "json", False) else _render_text(payload),
         json_mode=bool(getattr(args, "json", False)),
@@ -479,6 +662,56 @@ def register(sub: argparse._SubParsersAction) -> None:
         help=(
             f"Maximum number of traversal-discovered records (default: {DEFAULT_MAX_NODES}). "
             "Hitting this bound — or --depth — reports truncated=true in the payload."
+        ),
+    )
+    p.add_argument(
+        "--rerank",
+        action="store_true",
+        default=False,
+        help=(
+            "Rerank the primary hits with the cross-encoder reranker (opt-in; works "
+            "with every --mode). Runs AFTER lifecycle filtering and BEFORE --top-k, so "
+            "the pool can promote a record the search mode ranked below k. Items are "
+            "ordered by rerank_score; each record's own search score is preserved. "
+            "Fails closed if the remote reranker does not answer — see "
+            "--rerank-allow-fallback."
+        ),
+    )
+    p.add_argument(
+        "--rerank-pool",
+        type=int,
+        dest="rerank_pool",
+        default=DEFAULT_RERANK_POOL,
+        metavar="N",
+        help=(
+            f"How many lifecycle-visible hits --rerank reconsiders (default: "
+            f"{DEFAULT_RERANK_POOL}). Only pooled records can reach the primary tier, so "
+            "keep this comfortably wider than --top-k. Ignored without --rerank."
+        ),
+    )
+    p.add_argument(
+        "--rerank-threshold",
+        type=float,
+        dest="rerank_threshold",
+        default=None,
+        metavar="F",
+        help=(
+            "Opt in to DROPPING primary hits scoring at or below this rerank score "
+            "(default: none — --rerank reorders but never filters). The count cut is "
+            "reported in the bundle, never silently. Calibrated against the remote "
+            "cross-encoder, so it is not applied to lexical-fallback scores."
+        ),
+    )
+    p.add_argument(
+        "--rerank-allow-fallback",
+        action="store_true",
+        dest="rerank_allow_fallback",
+        default=False,
+        help=(
+            "Permit --rerank to use the local lexical-overlap lane when the remote "
+            "reranker does not answer. Without this, an unanswered remote lane is an "
+            "error rather than a silent downgrade. When the fallback is taken the "
+            "bundle names the lane and a warning goes to stderr."
         ),
     )
     p.add_argument(
