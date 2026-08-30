@@ -65,6 +65,15 @@ BACKEND_CHOICES: tuple[str, ...] = ("files", "mongo", "neo4j", "graph")
 class Backend(Protocol):
     """Minimal interface for a memory storage backend."""
 
+    @property
+    def embed_client(self) -> EmbedClient:
+        """The embed client the backend ranks with (the named embed-client seam).
+
+        CLI callers (e.g. the recall rerank stage) obtain the client through
+        this property — never the private ``_embed`` attribute.
+        """
+        ...
+
     def upsert(self, record: Record) -> None: ...
 
     def search(
@@ -323,10 +332,25 @@ class StoreBackend:
     in eidetic. The store is used as a pure opaque key-value layer.
     """
 
-    def __init__(self, name: str, **kwargs: object) -> None:
+    def __init__(
+        self, name: str, *, embed_client: EmbedClient | None = None, **kwargs: object
+    ) -> None:
         self._name = name
         self._kwargs = kwargs
-        self._embed = EmbedClient()
+        # ``embed_client`` is the named seam for the embed client: CLI callers
+        # (e.g. the recall rerank stage) inject a client here — or read it back
+        # via :attr:`embed_client` — instead of touching the private ``_embed``
+        # attribute. ``None`` keeps today's default of building a real client.
+        self._embed = embed_client or EmbedClient()
+
+    @property
+    def embed_client(self) -> EmbedClient:
+        """The embed client :meth:`search` ranks with (and the CLI may reuse).
+
+        Named, documented seam: obtain the client through this property rather
+        than the private ``_embed`` attribute.
+        """
+        return self._embed
 
     def upsert(self, record: Record) -> None:
         """Idempotently upsert *record* into the store (by id; dedup by hash within scope)."""
@@ -518,6 +542,9 @@ def get_backend(name: str = DEFAULT_BACKEND, **kwargs: object) -> Backend:
     store-probe passes a short connect timeout so a down mongo/neo4j fails fast
     rather than blocking on the default server-selection timeout. Backends that
     don't accept it (files) ignore it.
+
+    ``embed_client`` is the one kwarg intercepted by :class:`StoreBackend`
+    itself (the named embed-client seam) — it is never forwarded to the store.
 
     The CLI alias ``graph`` resolves to ``neo4j`` (issue #12) before validation,
     so every verb's ``--backend`` accepts the same token set.
